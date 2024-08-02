@@ -1,0 +1,1132 @@
+---
+title: "Section 7: Cosiner model and median of nail iron by month of collection and correlation with serum iron by sample type."
+output:
+  html_document:
+    theme: united
+    toc: no
+editor_options:
+  chunk_output_type: console
+header-includes:
+ \usepackage{float}
+bibliography: ../iron.bib
+---
+
+
+```{r, include=FALSE}
+
+knitr::opts_chunk$set(echo = F, 
+                      results = 'hide',
+                      fig.keep="all",
+                      warning = F,
+                      fig.pos = 'H',
+                      fig.width=10,
+                      fig.height=6,
+                      message=F,
+                      float=F)
+
+#runif(1, 0, 10^8)
+set.seed(74268794)
+
+```
+
+
+```{r, include=F}
+# bring in packages
+require(knitr)
+require(haven)
+require(data.table)
+require(ggplot2)
+require(kableExtra)
+require(labelled)
+library(dplyr)
+library(tidyr)
+library(plyr)
+library(grid)
+require(boot)
+
+
+require(tableone)
+library(tidyverse)
+require(gridExtra)
+require(cowplot)
+```
+
+# RTI nail iron description
+
+```{r}
+
+load(file="RTI-dat.RData") # all.dat2; RTI data set for analyses
+
+names(all.dat2)[grepl("FERTN", names(all.dat2))]
+
+```
+
+
+```{r}
+
+
+summary(all.dat2$RTI_Toenail_fe_Adj)
+
+summary(all.dat2$DR224_DC_SCL_ToenailColl_Mo)
+table(is.na(all.dat2$DR224_DC_SCL_ToenailColl_Mo)) # number with month of big toenail collection at second time for DC sample
+table(is.na(all.dat2$DR224_RTI_Toenail_CollMo_Big)) # number that have month of other toes nail collection for RTI
+
+table(all.dat2$DR224_DC_SCL_ToenailColl_Mo) 
+table(all.dat2$DR224_RTI_Toenail_CollMo_Other)
+
+table(all.dat2$RTI_Toenail_Source)
+# 
+# oneway.test(RTI_Toenail_fe_Adj ~ DR224_RTI_Toenail_CollMo_Other, data = all.dat2)
+# oneway.test(RTI_Toenail_fe_Adj ~ DR224_RTI_Toenail_CollYr_Big, data = all.dat2, var.equal = TRUE)
+# oneway.test(RTI_Toenail_fe_Adj ~ DR224_RTI_Toenail_CollYr_Other, data = all.dat2, var.equal = TRUE)
+# 
+# oneway.test(UMN_Iron_Baseline_FE ~ DR224_DC_Baseline_ToenailColl_Mo, data = all.dat2, var.equal = TRUE)
+# oneway.test(UMN_Iron_SCL_FE ~ DR224_DC_SCL_ToenailColl_Mo, data = all.dat2, var.equal = TRUE)
+# 
+# oneway.test(log(RTI_Toenail_fe_Adj) ~ DR224_RTI_Toenail_CollMo_Other, data = all.dat2, var.equal = TRUE)
+
+
+# DR224_RTI_Toenail_CollMo_Big	CALC: RTI Toenail Metals Case-Cohort: Month of toenail collection, big toe [RTI_Toenail_CollDate_Big]
+# DR224_RTI_Toenail_CollMo_Other	CALC: RTI Toenail Metals Case-Cohort: Month of toenail collection, other toes [RTI_Toenail_CollDate_Other]
+# DR224_RTI_Toenail_CollYr_Big	CALC: RTI Toenail Metals Case-Cohort: Year of toenail collection, big toe [RTI_Toenail_CollDate_Big]
+# DR224_RTI_Toenail_CollYr_Other	CALC: RTI Toenail Metals Case-Cohort: Year of toenail collection, other toes [RTI_Toenail_CollDate_Other]
+# DR224_SCL_Serum_Draw_Year	SCL - Calendar year of serum collection [UMN_Iron_SCL_DateDrawn, SCL_Serum_Draw_Date]
+# DR224_Serum_Draw_Year	Baseline - Calendar year of serum collection [UMN_Iron_Baseline_DateDrawn, Serum_Draw_Date]
+
+t1 = t(print( CreateTableOne(vars = c("RTI_Toenail_fe_Adj"), 
+                               strata="DR224_RTI_Toenail_CollMo_Other",
+                               data=all.dat2,
+                               test=FALSE),
+                nonnormal = c("RTI_Toenail_fe_Adj")))
+
+```
+
+## Medians by month
+
+```{r, results='markup'}
+
+kable( t1,
+       row.names = T,
+       booktabs=T)
+       
+```
+
+
+## Boxplots by month
+
+```{r}
+
+# Make the ggplot
+
+bplot1 = ggplot(all.dat2[complete.cases(all.dat2["DR224_RTI_Toenail_CollMo_Other"]),], 
+                aes(y=log(RTI_Toenail_fe_Adj),
+                     x=factor(DR224_RTI_Toenail_CollMo_Other))) +
+  geom_violin() + 
+  geom_boxplot(width=0.2) + theme_bw(base_size=20) +
+  labs(x="Month")
+
+bplot1
+
+```
+
+## Tests for differences across months
+
+```{r, results='markup'}
+  
+kruskal.test(RTI_Toenail_fe_Adj ~ as.factor(DR224_RTI_Toenail_CollMo_Other),
+             data = all.dat2)
+
+oneway.test(RTI_Toenail_fe_Adj ~ DR224_RTI_Toenail_CollMo_Other, data = all.dat2)
+
+```
+
+
+## Correlations between nail and serum iron by month
+
+```{r}
+
+# function to get correlation (copied from section2.Rmd)
+getcor1 <- function(dat) {
+  
+  
+  fe.dat = dat[, c("RTI_Toenail_fe_Adj", "UMN_Iron_Baseline_FE")]
+
+  # function to get correlation
+    getcor <- function(x, ndx) {
+      dat1.cor = cor(x[ndx,1], x[ndx,2], method="spearman", use="complete.obs")
+        return(dat1.cor)
+    }
+  
+  # bootstrap spearman correlation for two time points
+    fe.boot <- boot(fe.dat, getcor, R=1000, stype="i")
+  
+
+  # function to get means and se
+    get.dat = function(dat, val1){
+    
+      mean = mean(dat$t)
+      se = sd(dat$t); se # get sd of sampling dist = se
+      
+      uci = mean + 1.96*se; uci
+      lci = mean - 1.96*se ; lci
+      
+      return(data.frame(cor=mean(dat$t), 
+                        se.cor = sd(dat$t),
+                        uci=uci, lci=lci))
+      }
+
+  dat.summary = data.frame( get.dat(fe.boot, "fe.dat"))
+  return(dat.summary)
+}
+
+```
+
+```{r}
+
+# get correlations for each of the months of RTI nail collection
+
+cors1 <- dlply(all.dat2, c("DR224_RTI_Toenail_CollMo_Big"), getcor1)
+cors1
+
+cors1.dat = ldply(cors1)
+cors1.dat
+
+avg1 = cor(as.matrix(all.dat2[c("RTI_Toenail_fe_Adj", "UMN_Iron_Baseline_FE")]), method="spearman", use="complete.obs")[2,1]; avg1
+
+cor1.plot = ggplot(cors1.dat[which(complete.cases(cors1.dat)),], 
+       aes(x=as.factor(DR224_RTI_Toenail_CollMo_Big), y=cor)) +
+  geom_errorbar(aes(ymin=lci, ymax=uci), colour="black", width=.1) +
+  geom_hline(yintercept=avg1, color="red", size=1, linetype=3) + 
+  geom_point( size=3) + theme_bw(base_size=20) +
+    labs(y="Spearman correlation\n between nail and serum",
+         x="Month")
+
+
+cor1.plot
+
+```
+
+Note: Horizontal red line indicates overall correlation. 
+
+
+## Side by side plots
+
+```{r, fig.width=10, fig.height=12}
+
+plot_grid(bplot1, cor1.plot,  nrow=2, align="v")
+
+```
+
+# Dartmouth nail iron description
+
+```{r, results='hide'}
+
+# source: data-handling-cch.Rmd
+load(file="../sections/updated-data-iron.RData") # sub.dat is subset, all.dat is total data
+dim(sub.dat)
+
+# get ids for analysis subset
+
+# Source: frequencies.Rmd
+load(file="ids-include-basefu.RData") # baseline.all.id, fu.all.id, base.fu.all.id
+
+# fu.all.id = id of people with all serum and nail measures at follow-up 
+# baseline.all.id = id of people with all baseline serum and nail measures
+# base.fu.all.id =  id of people with all baseline serum and nail measures AND follow-up measures
+length(fu.all.id)
+length(baseline.all.id)
+
+dnail = sub.dat[sub.dat$PSID %in% baseline.all.id,] # create baseline data frame for Dartmouth nail sample
+
+t2 = t(print(CreateTableOne(vars = c("DC_Baseline_Toenail_Fe"), 
+               strata="DR224_DC_Baseline_ToenailColl_Mo",
+                        data=dnail,
+                        test=FALSE),
+              nonnormal = c("DC_Baseline_Toenail_Fe")))
+
+```
+
+
+## Medians by month
+
+```{r, results='markup'}
+
+kable(t2,
+      booktabs=T,
+      row.names = T)
+
+```
+
+## Boxplots by month
+
+```{r}
+
+b2 = ggplot(dnail[complete.cases(dnail["DR224_DC_Baseline_ToenailColl_Mo"]),], 
+            aes(y=log(DC_Baseline_Toenail_Fe),
+                     x=factor(DR224_DC_Baseline_ToenailColl_Mo))) +
+  geom_violin() + 
+  geom_boxplot(width=0.2) + theme_bw(base_size=20) +
+  labs(x="Month") +
+  ggtitle("Baseline")
+
+b2
+
+```
+
+
+```{r}
+
+b2.fu = ggplot(dnail[complete.cases(dnail["DR224_DC_SCL_ToenailColl_Mo"]),], 
+            aes(y=log(DC_SCL_Toenail_Fe),
+                     x=factor(DR224_DC_SCL_ToenailColl_Mo))) +
+  geom_violin() + 
+  geom_boxplot(width=0.2) + theme_bw(base_size=20) +
+  labs(x="Month") +
+  ggtitle("Follow-up")
+
+b2.fu
+
+```
+
+
+## Tests for differences across months
+
+```{r, results='markup', echo=T}
+
+kruskal.test(DC_Baseline_Toenail_Fe ~ as.factor(DR224_DC_Baseline_ToenailColl_Mo),
+             data = dnail)
+
+oneway.test(DC_Baseline_Toenail_Fe ~ as.factor(DR224_DC_Baseline_ToenailColl_Mo),
+             data = dnail)
+
+
+```
+
+
+## Correlations between nail and serum iron by month
+
+```{r}
+
+# function to get correlation (copied from section2.Rmd)
+getcor2 <- function(dat) {
+  
+  
+  fe.dat = dat[, c("DC_Baseline_Toenail_Fe", "UMN_Iron_Baseline_FE")]
+
+  # function to get correlation
+    getcor <- function(x, ndx) {
+      dat1.cor = cor(x[ndx,1], x[ndx,2], method="spearman", use="complete.obs")
+        return(dat1.cor)
+    }
+  
+  # bootstrap spearman correlation for two time points
+    fe.boot <- boot(fe.dat, getcor, R=1000, stype="i")
+  
+
+  # function to get means and se
+    get.dat = function(dat, val1){
+    
+      mean = mean(dat$t)
+      se = sd(dat$t); se # get sd of sampling dist = se
+      
+      uci = mean + 1.96*se; uci
+      lci = mean - 1.96*se ; lci
+      
+      return(data.frame(cor=mean(dat$t), 
+                        se.cor = sd(dat$t),
+                        uci=uci, lci=lci))
+      }
+
+  dat.summary = data.frame( get.dat(fe.boot, "fe.dat"))
+  return(dat.summary)
+}
+
+```
+
+```{r}
+
+# get correlations for each of the months of RTI nail collection
+
+cors2<- dlply(dnail, c("DR224_DC_Baseline_ToenailColl_Mo"), getcor2)
+cors2
+
+cors2.dat = ldply(cors2)
+cors2.dat
+
+cor2.plot = ggplot(cors2.dat[which(complete.cases(cors2.dat)),], 
+       aes(x=as.factor(DR224_DC_Baseline_ToenailColl_Mo), y=cor)) +
+  geom_errorbar(aes(ymin=lci, ymax=uci), colour="black", width=.1) +
+  geom_hline(yintercept=cor(dnail[c("DC_Baseline_Toenail_Fe", "UMN_Iron_Baseline_FE")]), color="red", size=1) + 
+  geom_point( size=3) + theme_bw(base_size=20) +
+  labs(y="Spearman correlation \nbetween nail and serum",
+       x="Month")
+
+cor2.plot
+
+
+```
+
+Note: Horizontal red line indicates overall correlation. 
+
+
+## Side by side plots
+
+```{r, fig.width=10, fig.height=12}
+
+plot_grid(b2, cor2.plot, nrow=2, align="v")
+
+```
+
+
+
+# Cosinor model
+
+
+## Model for seasonal adjustment
+
+We will use a two-step process to do a seasonal adjustment of the nail iron measures. First, we will fit a sine model to the nail iron data to describe the seasonal pattern. Second, we will use the residuals from this analysis in the analyses already done for the observed nail iron measures.
+
+The seasonal pattern can be characterized through fourier terms, which include cosine/sine function of time pairs that have been described elsewhere [@stolwijkStudyingSeasonalityUsing1999; @barnettCosinor2010; @bhaskaranTimeSeriesRegression2013a], and it can be defined with the following function:
+
+$$ f(t) = \beta_1 \times sin \left ( \frac{2\pi t}{T} \right) + cos \left ( \frac{2\pi t}{T} \right)$$ 
+
+- T is the total number of time periods, 12 in this case of months
+
+- t is the month of the year, 1 for January, ..., 12 for December
+
+After fitting a model a model with the time function above as covariates and nail iron as the outcome,
+
+$$\textrm{nail iron}_i = \beta_0 + \beta_1 \times sin \left ( \frac{2\pi t}{T} \right) + \beta_2 \times cos \left ( \frac{2\pi t}{T} \right) + \epsilon_i$$,
+
+we will use the residuals from this model in subsequent analyses as the second step. In this case, we assume that the residuals represent the remaining variation of the nail iron values after removing any seasonal variation  [@bhaskaranTimeSeriesRegression2013a].
+
+## RTI
+
+### Fitted model
+
+```{r}
+
+dat1 = all.dat2[complete.cases(all.dat2[,c("DR224_RTI_Toenail_CollMo_Big")]),]
+
+# summary(all.dat2$DR224_RTI_Toenail_CollMo_Big)
+# summary(dat1$RTI_Toenail_fe_Adj)
+# summary(dat1$DR224_RTI_Toenail_CollMo_Big)
+```
+
+```{r, echo=T, results='markup'}
+# regression with one pair of sine cosine functions
+lm1 = lm(log(RTI_Toenail_fe_Adj) ~ sin(2*3.141593*DR224_RTI_Toenail_CollMo_Big/12) + cos(2*3.141593*DR224_RTI_Toenail_CollMo_Big/12),
+         data = dat1)
+
+summary(lm1)
+
+
+```
+
+### Predicted values from model superimposed on boxplots
+
+```{r}
+# superimpose fitted values from cosinor model onto median plot
+newdat = data.frame(DR224_RTI_Toenail_CollMo_Big = seq(0,12.9,0.1)); newdat
+
+newdat$predict1 = predict(lm1, newdata=newdat)
+head(newdat)
+
+rti.baseline = bplot1 + geom_line(aes(y=predict1, x=DR224_RTI_Toenail_CollMo_Big),
+                   data=newdat) + # add line of predicted values to boxplot
+  ylab("log(toenail iron) mcg/g")
+
+rti.baseline
+
+
+ggsave(rti.baseline, file="RTI-season.png", dpi=600, width=6, height=6)
+
+```
+
+
+### Correlations between residuals from seasonal nail iron model and serum iron by month
+
+```{r}
+
+# function to get correlation (copied from section2.Rmd)
+getcor3 <- function(dat) {
+  
+  fe.dat = dat[, c("nail", "serum")]
+
+  # function to get correlation
+    getcor <- function(x, ndx) {
+      dat1.cor = cor(x[ndx,1], log(x[ndx,2]), method="spearman", use="complete.obs")
+        return(dat1.cor)
+    }
+  
+  # bootstrap spearman correlation for two time points
+    fe.boot <- boot(fe.dat, getcor, R=1000, stype="i")
+  
+
+  # function to get means and se
+    get.dat = function(dat, val1){
+    
+      mean = mean(dat$t)
+      se = sd(dat$t); se # get sd of sampling dist = se
+      
+      uci = mean + 1.96*se; uci
+      lci = mean - 1.96*se ; lci
+      
+      return(data.frame(cor=mean(dat$t), 
+                        se.cor = sd(dat$t),
+                        uci=uci, lci=lci))
+      }
+
+  dat.summary = data.frame( get.dat(fe.boot, "fe.dat"))
+  return(dat.summary)
+}
+
+```
+
+```{r}
+
+# Get correlations for each of the months of RTI nail collection
+resid.dat = data.frame(PSID = dat1$PSID,
+                       nail_residuals = residuals(lm1),
+                       RTI_Toenail_fe_Adj = log(dat1$RTI_Toenail_fe_Adj),
+                       UMN_Iron_Baseline_FE = log(dat1$UMN_Iron_Baseline_FE),
+                       UMN_Iron_Baseline_FERTN = log(dat1$UMN_Iron_Baseline_FERTN),
+                       DR224_RTI_Toenail_CollMo_Big = dat1$DR224_RTI_Toenail_CollMo_Big)
+
+head(resid.dat)
+```
+
+```{r}
+
+# name correlation variables
+resid.dat$nail = resid.dat$nail_residuals
+resid.dat$serum = resid.dat$UMN_Iron_Baseline_FE
+
+# get correlations between nail residuals and serum values by month of collection
+cors3 <- dlply(resid.dat, c("DR224_RTI_Toenail_CollMo_Big"), getcor3)
+cors3
+
+cors3.dat = ldply(cors3)
+cors3.dat
+
+avg3 = cor(resid.dat$nail_residuals, 
+          log(resid.dat$UMN_Iron_Baseline_FE),
+          method="spearman", use="complete.obs"); avg3
+
+cor3.plot = ggplot(cors3.dat[which(complete.cases(cors3.dat)),], 
+                   aes(x=as.factor(DR224_RTI_Toenail_CollMo_Big), y=cor)) +
+  geom_errorbar(aes(ymin=lci, ymax=uci), colour="black", width=.1) +
+  geom_hline(yintercept=avg3, linetype=3, color="red", size=1) + 
+  geom_point( size=3) + theme_bw(base_size=20) +
+    labs(y="Spearman correlation\n between nail and serum iron",
+         x="Month")
+
+
+cor3.plot
+
+```
+
+
+### Side by side plots of observed and adjusted values
+
+```{r, fig.width=10, fig.height=12}
+
+
+plot_grid(cor1.plot + ylim(-0.4, 0.4), 
+          cor3.plot + theme(axis.title.y = element_blank()) + ylim(-0.4, 0.4),
+          nrow=1, align="v",
+          labels = c("Unadjusted", "Adjusted for seasonality"))
+
+```
+
+Note: Horizontal red line indicates overall correlation. 
+
+
+
+### Correlations between adjusted (residuals from seasonal nail iron model) values and serum ferritin by month
+
+
+```{r}
+
+# name correlation variables
+resid.dat$nail = resid.dat$nail_residuals
+resid.dat$serum = resid.dat$UMN_Iron_Baseline_FERTN
+
+# get correlations between nail residuals and serum values by month of collection
+cors4 <- dlply(resid.dat, c("DR224_RTI_Toenail_CollMo_Big"), getcor3)
+cors4
+
+cors4.dat = ldply(cors4)
+cors4.dat
+
+avg4 = cor(resid.dat$nail_residuals, 
+          log(resid.dat$UMN_Iron_Baseline_FERTN),
+          method="spearman", use="complete.obs"); avg4
+
+
+avg4.orig = cor(resid.dat$RTI_Toenail_fe_Adj, 
+          log(resid.dat$UMN_Iron_Baseline_FERTN),
+          method="spearman", use="complete.obs"); avg4.orig
+
+cor4.plot = ggplot(cors4.dat[which(complete.cases(cors4.dat)),], 
+                   aes(x=as.factor(DR224_RTI_Toenail_CollMo_Big), y=cor)) +
+  geom_errorbar(aes(ymin=lci, ymax=uci), colour="black", width=.1) +
+  geom_hline(yintercept=avg4, linetype=3, color="red", size=1) + 
+  geom_hline(yintercept=avg4.orig, linetype=3, color="blue", size=1) + 
+  geom_point( size=3) + theme_bw(base_size=20) +
+    labs(y="Spearman correlation\n between nail and serum ferritin",
+         x="Month")
+
+cor4.plot
+
+```
+
+Note: Horizontal red line indicates overall correlation for adjusted nail iron.
+Horizontal blue line indicates overall correlation for original nail iron values.
+
+
+```{r}
+# look at correlation between adjusted RTI nail values and all 3 serum outcomes
+
+sub.dat = all.dat2[c("PSID", "RTI_Toenail_fe_Adj",
+                              "UMN_Iron_Baseline_FE",
+                              "UMN_Iron_Baseline_FERTN", 
+                              "UMN_Iron_Baseline_FESAT")]
+
+names(sub.dat)
+names(sub.dat)[2] = "nail"
+
+# convert all.dat2 to long by type of serum outcome
+data.long = gather(sub.dat,
+                   serum.type, serum, 
+                   UMN_Iron_Baseline_FE, 
+                   UMN_Iron_Baseline_FERTN,
+                   UMN_Iron_Baseline_FESAT)
+head(data.long)
+
+```
+
+### Correlations between observed RTI nail values and three nail serum values
+
+```{r, results='markup'}
+
+# get correlations between original nail values and serum values by type of serum
+
+cors4 <- dlply(data.long, c("serum.type"), getcor3)
+
+
+cors4.dat = ldply(cors4)
+cors4.dat
+
+```
+
+```{r}
+# get correlation with  nail residuals
+
+# merge residuals onto data frame above
+df.resid = merge(resid.dat[c("PSID", "nail_residuals")], sub.dat[!(names(sub.dat) %in% "nail")], by="PSID")
+dim(df.resid)
+dim(sub.dat)
+names(df.resid)
+names(df.resid)[2] = "nail"
+
+# convert residual data to long by type of serum outcome
+data.long2 = gather(df.resid,
+                   serum.type, serum, 
+                   UMN_Iron_Baseline_FE, 
+                   UMN_Iron_Baseline_FERTN,
+                   UMN_Iron_Baseline_FESAT)
+head(data.long2)
+```
+
+### Correlations between adjusted RTI nail values and three nail serum values
+
+```{r, results='markup'}
+
+# get correlations between original nail values and serum values by type of serum
+
+cors5 <- dlply(data.long2, c("serum.type"), getcor3)
+
+cors5.dat = ldply(cors5)
+cors5.dat
+
+```
+
+## Dartmouth
+
+### Correlations between observed Dartmouth nail values and three nail serum values
+
+
+```{r}
+# look at correlation between adjusted RTI nail values and all 3 serum outcomes
+
+sub.dat2 = dnail[c("PSID", "DC_Baseline_Toenail_Fe",
+                  "UMN_Iron_Baseline_FE",
+                              "UMN_Iron_Baseline_FERTN", 
+                              "UMN_Iron_Baseline_FESAT")]
+
+names(sub.dat2)
+names(sub.dat2)[2] = "nail"
+
+# convert all.dat2 to long by type of serum outcome
+data.long2 = gather(sub.dat2,
+                   serum.type, serum, 
+                   UMN_Iron_Baseline_FE, 
+                   UMN_Iron_Baseline_FERTN,
+                   UMN_Iron_Baseline_FESAT)
+head(data.long2)
+
+```
+
+```{r, results='markup'}
+
+# get correlations between original nail values and serum values by type of serum
+
+cors6 <- dlply(data.long2, c("serum.type"), getcor3)
+
+cors6.dat = ldply(cors6)
+cors6.dat
+
+```
+
+
+### Fitted seaonal model
+
+```{r}
+
+dat2 = dnail[complete.cases(dnail[,c("DR224_DC_Baseline_ToenailColl_Mo")]),]
+dim(dat2)
+
+```
+
+#### Baseline
+
+```{r, echo=T, results='markup'}
+
+# regression with one pair of sine cosine functions
+lm2 = lm(log(DC_Baseline_Toenail_Fe) ~ sin(2*3.141593*DR224_DC_Baseline_ToenailColl_Mo/12) + cos(2*3.141593*DR224_DC_Baseline_ToenailColl_Mo/12),
+         data = dat2)
+
+summary(lm2)
+
+```
+
+#### Follow-up
+
+```{r, echo=T, results='markup'}
+
+# regression with one pair of sine cosine functions
+lm2.fu = lm(log(DC_SCL_Toenail_Fe) ~ sin(2*3.141593*DR224_DC_SCL_ToenailColl_Mo/12) + cos(2*3.141593*DR224_DC_SCL_ToenailColl_Mo/12),
+         data = dat2)
+
+summary(lm2.fu)
+
+```
+
+
+```{r}
+
+# superimpose fitted values from cosinor model onto median plot
+newdat2.fu = data.frame(DR224_DC_SCL_ToenailColl_Mo = seq(0,12.9,0.1)); newdat
+newdat2.fu$predict2.fu = predict(lm2.fu, newdata=newdat2.fu)
+
+d2.plot = b2.fu + geom_line(aes(y=predict2.fu, x=DR224_DC_SCL_ToenailColl_Mo),
+                   data=newdat2.fu) + # add line of predicted values to boxplot
+  ylab("log(toenail iron) mcg/g")
+
+d2.plot
+
+```
+
+```{r}
+
+# Get correlations for each of the months of RTI nail collection
+resid.dat.dc = data.frame(PSID = dat2$PSID,
+                       nail_residuals = residuals(lm2),
+                       DC_Baseline_Toenail_Fe = log(dat2$DC_Baseline_Toenail_Fe),
+                       UMN_Iron_Baseline_FE = log(dat2$UMN_Iron_Baseline_FE),
+                       UMN_Iron_Baseline_FERTN = log(dat2$UMN_Iron_Baseline_FERTN),
+                       DR224_DC_Baseline_ToenailColl_Mo = dat2$DR224_DC_Baseline_ToenailColl_Mo)
+
+head(resid.dat.dc)
+
+table(is.na(dat2$DC_SCL_Toenail_Fe))
+
+# follow-up
+dat2.fu = dat2[which(complete.cases(dat2[c("DC_SCL_Toenail_Fe",
+                                           "DR224_DC_SCL_ToenailColl_Mo")])),]
+dim(dat2.fu)
+
+resid.dat.dc.fu = data.frame(PSID = dat2.fu$PSID,
+                       nail_residuals = residuals(lm2.fu),
+                       DC_SCL_Toenail_Fe = log(dat2.fu$DC_SCL_Toenail_Fe),
+                       UMN_Iron_SCL_FE = log(dat2.fu$UMN_Iron_SCL_FE),
+                       UMN_Iron_SCL_FERTN = log(dat2.fu$UMN_Iron_SCL_FERTN),
+                       DR224_DC_SCL_ToenailColl_Mo = dat2.fu$DR224_DC_SCL_ToenailColl_Mo)
+
+head(resid.dat.dc.fu)
+```
+
+
+```{r}
+# Examine correlations between adjusted nail iron values between two time points
+resid.dat.dc$res
+resid.combine = merge(resid.dat.dc[c("PSID", "nail_residuals")], 
+                      resid.dat.dc.fu[c("PSID", "nail_residuals")],
+                      by = "PSID")
+dim(resid.combine)
+resid.combine = resid.combine[resid.combine$PSID %in% base.fu.all.id,]
+dim(resid.combine)
+head(resid.combine)
+names(resid.combine)[2:3] = c("baseline", "fu")
+head(resid.combine)
+
+
+# original observed values
+orig.combine = merge(resid.dat.dc[c("PSID", "DC_Baseline_Toenail_Fe")], 
+                      resid.dat.dc.fu[c("PSID", "DC_SCL_Toenail_Fe")],
+                      by = "PSID")
+orig.combine = orig.combine[orig.combine$PSID %in% base.fu.all.id,]
+dim(orig.combine)
+
+```
+
+### Correlation between baseline and follow-up nail iron for adjusted and observed values
+
+```{r}
+
+# Adjusted nail values
+with(resid.combine, 
+     cor(baseline, fu,
+         method="spearman"))
+
+with(orig.combine, 
+     cor(DC_Baseline_Toenail_Fe, 
+         DC_SCL_Toenail_Fe,
+         method="spearman"))
+
+with(dnail[which(dnail$PSID %in% base.fu.all.id),],
+     cor(DC_Baseline_Toenail_Fe, 
+         DC_SCL_Toenail_Fe,
+         use="complete.obs",
+         method="spearman"))
+```
+
+
+```{r}
+# function to get correlation
+getcor <- function(x, ndx) {
+  dat1.cor = cor(x[ndx,1], x[ndx,2], method="spearman")
+    return(dat1.cor)
+}
+
+head(resid.combine)
+
+# check
+cor(resid.combine[,2], resid.combine[,3], method="spearman")
+getcor(resid.combine[,c(2,3)])
+
+# bootstrap spearman correlation for two time points
+resid.boot <- boot(resid.combine[,c(2,3)], getcor, R=1000, stype="i")
+orig.boot = boot(orig.combine[,c(2,3)], getcor, R=1000, stype="i")
+
+
+# function to get boot stats
+get.dat2 = function(dat, descr){
+  
+  val = dat$t # nail spearman - serum spearman
+
+  mean.val = mean(val); mean.val
+  se.val = sd(val); se.val # get sd of sampling dist = se
+  
+  uci = mean.val + 1.96*se.val ; uci
+  lci = mean.val - 1.96*se.val ; lci
+  
+  return(data.frame(type = descr,
+                    mean.serum=mean(dat$t), 
+                    mean.val = mean.val, 
+                    se = se.val, 
+                    uci=uci, 
+                    lci=lci))
+}
+
+dat.summary2 = rbind.data.frame( get.dat2(resid.boot, "Adjusted"),
+                                get.dat2(orig.boot, "Observed") )
+```
+
+```{r, results="markup"}
+
+dat.summary2
+```
+
+
+
+### Predicted values from fitted Dartmouth seasonal model superimposed on boxplots
+
+```{r}
+
+# superimpose fitted values from cosinor model onto median plot
+newdat2 = data.frame(DR224_DC_Baseline_ToenailColl_Mo = seq(0,12.9,0.1)); newdat
+
+newdat2$predict2 = predict(lm2, newdata=newdat2)
+
+
+d1.plot = b2 + geom_line(aes(y=predict2, x=DR224_DC_Baseline_ToenailColl_Mo),
+                   data=newdat2) + # add line of predicted values to boxplot
+  ylab("log(toenail iron) mcg/g")
+
+d1.plot
+
+```
+
+
+```{r, fig.width=6, fig.height=12}
+
+d.plots = plot_grid(d1.plot, d2.plot,  nrow=2, align="v")
+d.plots
+
+ggsave(d.plots, file="Dartmouth-season.png", dpi=600, width=6, height=12)
+
+
+```
+
+### Baseline 
+
+```{r}
+# get correlation with  nail residuals
+
+
+# look at correlation between adjusted  Dartmouth nail values and all 3 serum outcomes
+
+sub.dat.dc= dnail[c("PSID", "DC_Baseline_Toenail_Fe",
+                              "UMN_Iron_Baseline_FE",
+                              "UMN_Iron_Baseline_FERTN", 
+                              "UMN_Iron_Baseline_FESAT")]
+
+names(sub.dat.dc)
+names(sub.dat.dc)[2] = "nail"
+
+# convert to long by type of serum outcome
+data.long.dc = gather(sub.dat.dc,
+                   serum.type, serum, 
+                   UMN_Iron_Baseline_FE, 
+                   UMN_Iron_Baseline_FERTN,
+                   UMN_Iron_Baseline_FESAT)
+head(data.long.dc)
+
+# merge residuals onto data frame above
+df.resid.dc = merge(resid.dat.dc[c("PSID", "nail_residuals")], sub.dat.dc[!(names(sub.dat.dc) %in% "nail")], by="PSID")
+
+dim(df.resid.dc)
+dim(sub.dat.dc)
+names(df.resid.dc)
+names(df.resid.dc)[2] = "nail"
+
+# convert residual data to long by type of serum outcome
+data.long.dc.resid = gather(df.resid.dc,
+                   serum.type, serum, 
+                   UMN_Iron_Baseline_FE, 
+                   UMN_Iron_Baseline_FERTN,
+                   UMN_Iron_Baseline_FESAT)
+head(data.long.dc.resid)
+
+```
+
+#### Spearman correlation between observed Dartmouth nail values and three serum iron values
+
+```{r, results='markup'}
+
+# get correlations between original nail values and serum values by type of serum
+
+cors7 <- dlply(data.long.dc, c("serum.type"), getcor3)
+
+cors7.dat = ldply(cors7)
+cors7.dat
+
+```
+
+#### Spearman correlation between seasonal adjusted Dartmouth nail values and three serum iron values at baseline
+
+```{r, results='markup'}
+
+# get correlations between original nail values and serum values by type of serum
+
+cors8 <- dlply(data.long.dc.resid, c("serum.type"), getcor3)
+
+cors8.dat = ldply(cors8)
+cors8.dat
+
+```
+
+### Follow-up
+
+```{r}
+# get correlation with  nail residuals
+
+
+# look at correlation between adjusted  Dartmouth nail values and all 3 serum outcomes
+
+sub.dat.dc.fu = dnail[c("PSID", "DC_Baseline_Toenail_Fe",
+                              "UMN_Iron_SCL_FE",
+                              "UMN_Iron_SCL_FERTN", 
+                              "UMN_Iron_SCL_FESAT")]
+
+names(sub.dat.dc.fu)
+names(sub.dat.dc.fu)[2] = "nail"
+
+# convert to long by type of serum outcome
+data.long.dc.fu = gather(sub.dat.dc.fu,
+                   serum.type, serum, 
+                   UMN_Iron_SCL_FE, 
+                   UMN_Iron_SCL_FERTN,
+                   UMN_Iron_SCL_FESAT)
+head(data.long.dc.fu)
+
+# merge residuals onto data frame above
+df.resid.dc.fu = merge(resid.dat.dc.fu[c("PSID", "nail_residuals")], sub.dat.dc.fu[!(names(sub.dat.dc.fu) %in% "nail")], by="PSID")
+
+dim(df.resid.dc.fu)
+dim(sub.dat.dc.fu)
+names(df.resid.dc.fu)
+names(df.resid.dc.fu)[2] = "nail"
+
+# convert residual data to long by type of serum outcome
+data.long.dc.resid.fu = gather(df.resid.dc.fu,
+                   serum.type, serum, 
+                   UMN_Iron_SCL_FE, 
+                   UMN_Iron_SCL_FERTN,
+                   UMN_Iron_SCL_FESAT)
+head(data.long.dc.resid.fu)
+
+```
+
+#### Spearman correlation between observed Dartmouth nail values and three serum iron values
+
+```{r, results='markup'}
+
+# get correlations between original nail values and serum values by type of serum
+
+cors9 <- dlply(data.long.dc.fu, c("serum.type"), getcor3)
+
+cors9.dat = ldply(cors9)
+cors9.dat
+
+```
+
+#### Spearman correlation between seasonal adjusted Dartmouth nail values and three serum iron values at baseline
+
+```{r, results='markup'}
+
+# get correlations between original nail values and serum values by type of serum
+
+cors10 <- dlply(data.long.dc.resid.fu, c("serum.type"), getcor3)
+
+cors10.dat = ldply(cors10)
+cors10.dat
+
+```
+
+
+## Serum cosinor model
+
+
+
+```{r, eval=F, include=F}
+
+# Serum_Draw_AgeExact
+
+
+names(dnail)
+
+sub.dat2 = dnail[c("PSID", "DC_Baseline_Toenail_Fe",
+                  "UMN_Iron_Baseline_FE",
+                              "UMN_Iron_Baseline_FERTN", 
+                              "UMN_Iron_Baseline_FESAT")])
+
+# make day for serum samples
+# source: https://stackoverflow.com/questions/67777098/convert-day-and-month-to-number-of-the-year-1-365-in-r
+
+mdc2 = mdc2 %>% 
+  # combine into one variable
+  tidyr::unite("umn.date", DR224_RTI_Toenail_CollYr_Big, DR224_RTI_Toenail_CollMo_Big, DR224_RTI_Toenail_Collday_Big,
+               sep = "-", remove = FALSE) %>% 
+  # parse as date
+  dplyr::mutate(umn.date = lubridate::ymd(umn.date)) %>% 
+  # extract day of year
+  dplyr::mutate(umn.doy = lubridate::yday(umn.date))
+
+head(mdc[c('DR224_RTI_Toenail_CollYr_Big', 'DR224_RTI_Toenail_CollMo_Big', 'DR224_RTI_Toenail_Collday_Big', 'rti.doy')]) # check
+
+
+# Function to do:
+# 1) regression 
+# 2) get peak and timing of peak for figure 
+# by each metal
+
+get.stats2 = function(outcome){
+  
+  # varname = "fe";   # debug
+  # column with metal variable name
+  dat=mdc2
+  colnum.metal = which(names(dat) %in% outcome)
+  dat$metal = as.numeric(dat[, colnum.metal])
+  class(dat$metal)
+  summary(dat$metal)
+  dim(dat)
+  summary(dat$metal)
+  
+  ### 1) Cosinor models
+  
+  # Fitted seasonal model
+  
+  # Regression with one pair of sine cosine functions
+  
+  # 1a. Combined for studies
+  # lm1 = lm(log(metal) ~  sin(2*3.141593*month/12) + cos(2*3.141593**month/12),
+  #          data = dat)
+  lm1 = lm(log(metal) ~  sin(2*3.141593*day/365) + cos(2*3.141593**day/365),
+           data = dat)  
+  summary(lm1)
+  
+  # 2. get amplitude and phase
+  # see test.Rmd at C:\Users\vonholleaf\National Institutes of Health\Wojcik, Katie (NIH NIEHS) [F] - Metal-seasonal-patterns\scripts\amplitude-phase
+  # Source: https://stats.stackexchange.com/questions/77543/how-do-i-get-the-amplitude-and-phase-for-sine-wave-from-lm-summary
+  
+  # 2a. amplitude and phase for combined model
+  coef(lm1)
+  b0 = coef(lm1)[1]
+  alpha = coef(lm1)[3]
+  beta = coef(lm1)[4]
+  
+  r.1 <- sqrt(alpha^2 + beta^2); r.1
+  phi.1 <- atan2(beta, alpha); phi.1
+  
+  # time.at.peak.1 = (asin(1)-phi.1)*12/(2*3.14); time.at.peak.1
+  time.at.peak.1 = (asin(1)-phi.1)*365/(2*3.14); time.at.peak.1
+
+  # save all objects to list
+  
+  return(list(lm1, r.1, time.at.peak.1))
+  
+}
+
+```
+
+
+```{r, eval=F, include=F}
+
+# Loop function to get all objects across all metals
+
+fe.list =  c('UMN_Iron_Baseline_FE', 'UMN_Iron_Baseline_FERTN', 'UMN_Iron_Baseline_FESAT')
+
+# get linear coefficients
+fe.models = mapply(get.stats2, 
+                    outcome = fe.list,
+                    SIMPLIFY = F) # run all models for variables
+
+fe.models[2]
+
+```
+
+
+# References

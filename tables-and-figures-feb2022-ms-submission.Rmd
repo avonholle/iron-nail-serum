@@ -1,0 +1,675 @@
+--- 
+title: "Tables and Figures"
+output:
+  pdf_document:
+    includes:
+      in_header: ../preamble-latex-nobookdown.tex
+bibliography: ../iron.bib
+description: Summary of analyses
+editor_options:
+  chunk_output_type: console
+geometry: margin=1cm
+link-citations: yes
+linkcolor: blue
+citecolor: blue
+always_allow_html: yes
+urlcolor: blue
+---
+
+
+```{r, include=FALSE}
+# bibliography: [../../Iron-status/bib/iron-lit.bib]
+
+# Change to eval=T if you want to re-run w/ new data. Note that having this set to T, the report won't print if there are image files inserted into the bookdown document, but all the .Rmd child files will run. For example, the .png files from section2.Rmd will not print because this bookdown report will be looking for the .png files in the child scripts located in a different folder than the bookdown report where this script lives. For new data, need to run with eval=T to re-run all R scripts then re-run with eval=F to create report.
+knitr::opts_chunk$set(echo = F, 
+                      eval = F, 
+                      fig.width=10,
+                      fig.height=5,
+                      fig.cap=T,
+                      message=F,
+                      float=F,
+                      fig.pos="H",
+                      results = 'markup', # hide all results
+                      warning = F)
+
+```
+
+
+```{r, include=F, eval=T}
+require(knitr)
+require(kableExtra)
+require(stargazer) 
+require(nlme)
+require(tidyr)
+require(ggplot2)
+
+```
+
+
+```{r, child = "../sections/data-handling-cch.Rmd", eval=F}
+```
+
+
+```{r, child = "../sections/frequencies.Rmd", eval=F}
+```
+
+<!-- Re-use chunks. Source: https://bookdown.org/yihui/rmarkdown-cookbook/reuse-chunks.html -->
+
+
+```{r fqs, ref.label=c('fq'), eval=T, include=FALSE}
+```
+
+<!-- Source: U:\projects\Iron-nails-serum\sections\sample-size-rev.tex -->
+<!-- Run in TeXworks, open created pdf, copy image and make into 'sample-flow2.png' file in this folder. -->
+
+![Sample flow diagram. The green lines indicate the flow diagram for the primary sample with participants having both serum and toenail iron levels. The red lines enclose th replication sample with baseline values for participants with both serum and toenail iron levels.](sample-flow2.png)
+
+\clearpage
+\newpage
+
+
+  
+\clearpage
+\newpage
+
+```{r, eval=T}
+
+## Descriptive statistics
+# source: section1.Rmd
+
+load(file="../sections/k1.RData") # k1, tot
+
+k1 %>%
+  kable_styling(latex_options = c("repeat_header")) %>%
+  footnote(general="IQR=Interquartile range")
+
+```
+
+\clearpage
+\newpage
+
+<!-- Cross-sectional -->
+
+
+```{r, fig.cap="Baseline iron serum and nail plots", eval=T, fig.width=6, fig.height=15}
+
+# Source: section2.Rmd
+
+load(file="../sections/section2-plots.RData") # p1, p1.pred, p2, p2.pred, model.info.t2.2, model.info2 from section2.Rmd
+
+# p1.pred
+
+```
+
+
+```{r, fig.cap="Scatter plots of natural log transformed washed toenail versus serum iron levels by time of collection.", eval=T,  fig.width=15, fig.height=10}
+  scatter1
+```
+
+```{r, include=F, eval=F}
+# output for NIEHS Science Days poster
+ggsave(scatter1, file="2021-11-poster-scatter.png",
+       width=15, height=8)
+
+ggsave(scatter1, file="Fig2.png",
+       width=15, height=8)
+
+```
+
+
+```{r}
+
+
+scatter2_1 = scatter2 + 
+  theme_bw(base_size=40) +
+    theme(
+        axis.line = element_line(colour = "black", size = 1/.pt),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        strip.background = element_rect(colour=NA, fill=NA),
+        strip.placement="outside", 
+        legend.position="bottom")
+
+scatter2_1
+
+```
+
+
+```{r}
+
+ggsave(scatter2_1, 
+       file="~\\Github\\postdoc\\misc\\presentations\\job-talk-2022\\images\\compare-scatter.png", 
+       dpi=600, width=15, height=12)
+
+
+```
+
+
+```{r, eval=T}
+
+# source: section3-log.Rmd
+load(file="../sections/section3-dat-log.RData") # sp.dat1.df,  sp.dat3.df
+
+```
+
+
+
+```{r, eval=T, include=F}
+
+sp1 = sp.dat1.df; sp1$time=1
+sp2 = sp.dat3.df; sp2$time=2
+
+sp.both = rbind.data.frame(sp1, sp2)
+# sp.both
+#names(sp.both)
+names(sp.both)[1]="serum.measure"
+names(sp.both)[3]="p.value"
+names(sp.both)[4]="n"
+
+sp.both = sp.both[!(sp.both$serum.measure=="PC1"),]
+sp.both$serum.measure = factor(sp.both$serum.measure)
+#levels(sp.both$serum.measure)
+
+sp.both$serum.measure = factor(sp.both$serum.measure,
+                               labels=c("Serum Iron", 
+                                        "Ferritin",
+                                        "Transferrin Saturation"))
+#levels(sp.both$serum.measure)
+
+dat.out=data.frame(pivot_wider(sp.both,
+            id_cols=serum.measure,
+            names_from= time, values_from=rho))
+#class(dat.out)
+
+dat.out
+
+colnames(dat.out)[c(2,3)] = c("Baseline", "Follow-up")
+```
+
+
+```{r, eval=F, include=F}
+kable(dat.out, 
+      booktabs=T,
+      digits=2,
+      caption="Spearman correlation statistic between serum and nail measure at baseline and follow-up",
+      col.names=c("Serum measure", "Baseline", "Follow-up")) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+```
+
+
+
+
+```{r, eval=T}
+
+### Section 4: Coefficent of variation (CV)
+
+# source: section4-log.Rmd
+load(file="../sections/section4-dat-log.RData") # s4dat, cv1.info, p.s4
+
+# source: section4.Rmd
+#load(file="../sections/section4-dat.RData") # s4dat, cv1.info, p.s4
+```
+
+
+```{r, eval=T, include=F}
+
+# combine baseline and follow-up CV data
+cv1 = cv1.info; colnames(cv1)[2]="Baseline";#cv1
+cv2 = cv2.info; colnames(cv2)[2]="Follow-up"; #cv2
+
+dat.out
+dat.out[,2] = paste0(formatC(round(dat.out[,2], 2), format='f', digits=2))
+dat.out[,3] = paste0(formatC(round(dat.out[,3], 2), format='f', digits=2))
+sapply(dat.out, class)
+
+cv.both = merge(cv1[,c(1,2)], cv2[,c(1,2)], by="Measure")
+#cv.both
+cv.both[,2:3] = round(cv.both[,2:3],2)
+
+colnames(dat.out)[1]="Measure"
+
+# add Spearman correlations to table
+cv.both2 = merge(cv.both, dat.out, by="Measure", all=T)
+#cv.both2
+cv.both2[is.na(cv.both2)] = " "
+
+```
+
+
+```{r, eval=T}
+
+kable(cv.both2,
+      booktabs=T,
+      digits=2,
+      caption="Spearmean correlations between nails and serum iron values$^a$ and coefficient of variation for natural log-transformed levels at baseline and follow-up",
+      col.names=c("Serum measure", rep(c("Baseline (n=146)", "Follow-up (n=86)"),2)),
+      escape=F) %>%
+    add_header_above(c(" "=1, 
+                       "Coefficient of Variation"=2, 
+                       "Correlation coefficient between \nserum iron and nail measure"=2)) %>%
+  kable_styling(latex_options = c("HOLD_position"), full_width = F) %>%
+  column_spec(column = 4, width = "1in")# %>% 
+#  footnote(alphabet="For natural log-transformed values.",
+#           threeparttable = T)
+
+```
+
+
+
+
+<!-- Source: section5-crossed.Rmd and section5-spearman.Rmd -->
+
+
+```{r, eval=T}
+## Repeated levels over time
+### Compare Spearman correlation coefficient for two time points
+
+load(file="../sections/section5-spearman.RData")
+#names(dat.summary)
+```
+
+
+
+```{r, eval=T, include=F}
+dat.summary$est.ci = paste0(round(dat.summary$`nail-serum`, 2), " (", 
+                            round(dat.summary$lci, 2), ", ",
+                            round(dat.summary$uci, 2), ")")
+
+dat.summary2$est.ci2 = paste0(round(dat.summary2$mean.serum, 2), " (", 
+                            round(dat.summary2$lci, 2), ", ",
+                            round(dat.summary2$uci, 2), ")")
+#dat.summary2; dat.summary
+#levels(factor(dat.summary$`Serum measure`))
+dat.summary$serum.measure = factor(dat.summary$`Serum measure`,
+                                   labels = c("Iron",
+                                              "Ferritin",
+                                              "Transferrin Saturation"))
+#head(dat.summary)
+
+dat.summary.both = merge(dat.summary[c("Serum measure", "est.ci")], 
+                         dat.summary2[c("serum", "est.ci2")], 
+                         by.x="Serum measure", by.y="serum", all.y=T)
+#dat.summary.both
+
+levels(dat.summary.both$`Serum measure`)
+dat.summary.both$`Serum measure` = factor(dat.summary.both$`Serum measure`,
+                                          labels=c("Serum iron",
+                                                   "Ferritin", 
+                                                   "Transferrin Saturation",
+                                                   "Nail iron"))
+dat.summary.both[is.na(dat.summary.both)] = " "
+```
+
+
+```{r, eval=T, include=T}
+kable(dat.summary.both[c("Serum measure", "est.ci2", "est.ci")], booktabs=T,
+      col.names = c("Serum measure", 
+                    "Spearman correlation coefficient between two time points (n=86)",
+                    "Difference between nail iron and serum correlation coefficients (n=86)"),
+      caption="Spearman correlation coefficients (95\\% CI) between baseline and follow-up levels by nail and serum status.", 
+      digits=2, 
+      escape=F) %>%
+  column_spec(column = 1, width = "1.5in") %>% 
+  column_spec(column = 2, width = "1.5in") %>% 
+  column_spec(column = 3, width = "1.5in") %>% 
+  kable_styling(latex_options = "HOLD_position", full_width = F)
+
+```
+
+```{r, eval=T}
+
+### Mixed effects model information for change over time 
+# load data from section5-crossed.Rmd
+
+load(file="../sections/s5-crossed.RData") # coef.all, coef.all2, coef.bycase, coef.bymenop, p1.s5.crossed, p2.s5.crossed
+# p2.s5.crossed
+
+```
+
+
+
+```{r, eval=T, results='hide'}
+
+names(coef.all2)
+# Clean up table for manuscript
+test = coef.all2[c("Value", "Std.Error", 'serum.val', 'menop.t1.t2', 'coef.name')]
+
+test$est.ci = with(test, paste0(formatC(round(100*Value,2), format='f', digits=2),
+                                " (",
+                                formatC(round(100*(Value - 1.96*Std.Error), 2), format='f', digits=2),
+                                ", ",
+                                formatC(round(100*(Value + 1.96*Std.Error), 2), format='f', digits=2),
+                                ")"))
+
+levels(factor(test$serum.val))
+test$serum.val.f = with(test, factor(serum.val,
+                                     labels=c("Serum iron",
+                                              "Ferritin",
+                                              "Transferrin Saturation",
+                                              "Nail iron")))
+levels(factor(test$coef.name))
+test$coef.name.f = with(test, factor(coef.name, 
+                                     labels=c("Intercept",
+                                              "Age")))
+
+t2 = reshape2::dcast(test[!(test$coef.name.f=="Intercept"),], 
+                     serum.val.f + menop.t1.t2 ~ coef.name.f, 
+                     value.var="est.ci")
+
+t2
+
+```
+
+\clearpage 
+\newpage
+
+```{r, results="markup", eval=T}
+
+kable(t2, 
+      booktabs=T,
+      col.names = c("Iron status", "menopause status", "Age (years)"),
+      caption="Regression coefficients$^a$ for mixed effects models by natural log-transformed iron outcome and menopause status (baseline/follow-up)", 
+      escape=F) %>%
+  collapse_rows(columns=1, valign="top") %>%
+  kable_styling(latex_options = "HOLD_position", full_width = F) %>%
+    footnote(alphabet = c("Coefficients multiplied by 100"))
+
+
+```
+
+
+\clearpage
+\newpage
+
+```{r, results="markup", eval=T, fig.cap="Nail and serum values (natural log transformed) over age-time by type of iron measure, menopause status combinations at baseline/follow-up, and case status. The solid red line indicates the fitted line from the mixed effects regression model, and each solid black line represents an individual.", fig.width=12, fig.height=14}
+
+# from s5-crossed.RData made in section5-crossed.Rmd
+p2.s5.crossed2
+  
+```
+
+
+```{r, include=F, eval=F}
+# output for NIEHS Science Days poster
+ggsave(p2.s5.crossed2, file="Fig3.png",
+       width=12, height=14)
+
+```
+
+
+\clearpage
+\newpage
+
+
+```{r, include=F, eval=F}
+# output for NIEHS Science Days poster
+ggsave(p2.s5.crossed2, file="2021-11-poster-long.png",
+       width=12, height=14)
+
+```
+
+
+<!-- Source: section7.Rmd -->
+
+
+<!-- ![Toenail iron levels by month](Dartmouth-season.png){ height=85% } -->
+
+<!-- Note: Solid line represents predicted values from linear regression with sine/cosine pairs. -->
+
+
+**Supplement**
+
+<!-- ======================================================================================== -->
+
+<div id="refs"></div>
+
+\beginsupplement
+
+
+\textbf{Supplemental text regarding mixed effects models}
+
+The following model estimates iron levels from one serum iron outcome and the nail iron outcome, each  measured twice over time. We fit the following model separately for each of the three serum outcomes: serum iron, serum ferritin, and serum transferrin saturation.
+
+The mixed effects model includes the natural log transformed serum and nail levels as outcomes and age-time as a covariate with a continuous autocorrelation structure for correlation of residuals over time.
+
+  - Model: $$y_{ijk} = \beta_{0i} + \beta_{1} \cdot x_{1ijk} + \beta_{2i} \cdot x_{2ijk} + \beta_3 \cdot x_{1ijk} \cdot x_{2ijk} + \epsilon_{ijk}$$
+  
+    - $i, j, k$ are the $i$th person, $j$th nail/serum measure and $k$th time (years)
+    - $y_{ijk}$ = natural log transformed iron measure for person $i$, nail/serum $j$ at time $k$.
+    - $\beta_{0i}$ = random intercept for person $i$
+        - $\beta_{0i} = \beta_0 + \gamma_{0i}$
+    - $\beta_{1}$ = fixed coefficient for age (years)
+    - $x_{1ijk}$ = age (years) at measure for person $i$ and nail measure $j$ and time $k$.
+    - $\beta_{2i}$ = random coefficient for nail for person $i$
+        - $\beta_{2i} = \beta_2 + \gamma_{2i}$
+    - $x_{2ijk}$ = binary indicator for nail (1=nail, 0=serum) for person $i$ and nail measure $j$ and time $k$.
+    - $\epsilon_{ijk}$ = random error term for person $i$, nail value $j$, time $k$, $\epsilon_{ijk} \sim N(0, \Sigma_{AR})$
+    
+    - $\Sigma_{AR}$ is the continuous autoregressive correlation structure for the residuals, $\sigma^2 \rho^{t_1 - t_2}$, where $t_1$ and $t_2$ are age at observation times (age scale) for time 1 and time 2. 
+    
+    - $(\gamma_{0i}, \gamma_{2i}) \sim N(0, \Sigma_{random})$
+    
+        - $\Sigma_{random} = \begin{pmatrix} \tau_0 & \tau_{01} \\ \tau_{01} & \tau_1 \end{pmatrix}$
+
+
+```{r, eval=T}
+
+### Boxplots of nail and serum iron levels
+
+# source: section4.Rmd
+load(file="../sections/section4-dat.RData") # s4dat, cv1.info, p.s4, p.box
+
+```
+
+
+
+```{r, fig.cap="Replication sample: Baseline natural log transformed iron serum versus toenail levels.", eval=T, fig.width=18, fig.height=6}
+
+### RTI data scatter plots
+
+# Source: section2-RTI.Rmd
+load(file="../sections/section2-RTI-plots.RData") # p1, p1.pred, p2, p2.pred, model.info.t2.2, model.info2
+
+pb.fig2.rti
+
+```
+
+
+
+```{r, fig.cap="Boxplots of natural log transformed iron serum and nail levels at baseline and follow-up.", eval=T, fig.width=8, fig.height=5}
+
+p.box
+
+```
+
+
+```{r, eval=T}
+#### RTI data
+
+# source: section4-RTI.Rmd
+# section4-RTI-log.Rmd
+load(file="../sections/section4-RTI-dat-log.RData") # s4dat, cv1.info, p.s4
+
+```
+
+```{r, fig.cap="Replication sample: Boxplots of natural log transformed baseline iron serum and nail levels.", eval=T, fig.width=8, fig.height=5}
+
+p.s4
+
+```
+
+```{r, eval=T}
+#### RTI data
+
+# source: section3-RTI.Rmd
+load(file="../sections/section3-RTI-dat.RData") # sp.dat1.df,  cor.bothnail and p.dc.rti
+
+```
+
+
+```{r, eval=T}
+
+sp1.rti = sp.dat1.df
+sp1.rti = sp1.rti[!(sp1.rti$`Serum measure`=="PC1"),]; #sp1.rti
+
+#levels(sp.both$serum.measure)
+sp1.rti$Measure = factor(sp1.rti$`Serum measure`,
+                               labels=c("Serum Iron", "Ferritin",
+                                        "Transferrin Saturation"))
+
+```
+
+
+
+```{r, eval=T}
+# combine baseline and follow-up CV data
+cv1.rti = cv1.info; colnames(cv1)[2]="Baseline"
+
+cv.both.rti = merge(cv1.rti, sp1.rti[c("Measure", "rho")], by="Measure", all.x=T)
+#cv.both.rti
+cv.both.rti$rho = round(cv.both.rti$rho, 2)
+cv.both.rti[is.na(cv.both.rti)] = " "
+
+```
+
+```{r, eval=T}
+
+kable(cv.both.rti, caption="Replication sample: Spearmean correlations between nails and serum iron values$^a$ and coefficient of variation for natural log-transformed levels at baseline and follow-up.",
+      booktabs=T, 
+      digits=2, 
+      col.names = c("Measure", "Coefficient of variation", "Spearman\ncorrelation coefficient")) %>%
+  kable_styling(latex_options = "HOLD_position") %>%
+  column_spec(column = 1, width = "1.5in") %>% 
+  column_spec(column = 2, width = "1.5in") %>% 
+  column_spec(column = 3, width = "1.5in") %>%
+  footnote(alphabet=c("For natural log-transformed values."),
+                      threeparttable = T)
+
+
+```
+
+
+```{r, results="markup", eval=T, fig.width=6, fig.height=8, fig.cap="Differences in natural log transformed values between entry and follow-up by nail and serum status. Correlation between the nail iron and serum levels are 0.02 for serum iron, -0.05 for serum ferritin, and 0.02 for transferrin saturation. The solid green line represents the slope from a simple linear regression."}
+
+# source: section5-crossed.Rmd
+# Plot of time differences for nail vs serum levels.
+load( file="../sections/s5-crossed-spearman.RData") # cor.1.info, p.diffs
+
+p.diffs 
+
+```
+
+
+```{r, results="markup", eval=F}
+
+# Correlation between these nail/serum differences.
+# Source: section5-crossed.Rmd
+
+kable(cor.1.info,
+      caption="Correlation between nail and serum differences of baseline and follow-up natural log-transformed values.",
+      booktabs=T)
+
+```
+
+
+```{r, results="markup", eval=F, include=F}
+#names(coef.all)
+#levels(factor(coef.all$byval))
+
+# clean up table for manuscript
+coef.all = within(coef.all, {
+  est.ci = paste0(formatC(round(Value, 3), format='f', digits=3), 
+                  " (",
+                  formatC(round(Value + 1.96*Std.Error, 3), format='f', digits=3), ", ",
+                  formatC(round(Value - 1.96*Std.Error, 3), format='f', digits=3), ")")
+  byval.f = factor(byval, labels=c("Iron", "Ferritin", "Transferrin\n Saturation"))
+})
+#head(coef.all)
+
+t.fe1 = reshape2::dcast(coef.all, 
+                     byval.f ~ coef.name, 
+                     value.var="est.ci")
+
+kable(t.fe1, 
+      col.names = c("Serum value", "Intercept",
+                    "Age", "Nail (yes=1 vs. no=0)", "Age x Nail"),
+      booktabs=T,
+      caption="Regression coefficients for mixed effects model with log transformed levels by iron outcome") %>%
+  collapse_rows(columns=1, valign="top") %>%
+  kable_styling(latex_options = c("HOLD_position"))
+
+```
+
+\clearpage
+\newpage
+
+```{r, results="markup", eval=T, fig.cap="Replication sample: Nail and serum values over time by type of iron measure, menopause status combinations at baseline/follow-up, and case status. The solid red line indicates the fitted line from the mixed effects regression model, and each solid black line represents an individual.", fig.width=8, fig.height=10}
+
+p1.s5.crossed 
+
+```
+
+
+\clearpage
+\newpage
+
+
+```{r, results="markup", eval=T}
+
+# head(coef.bymenop)
+# levels(factor(coef.bymenop$byval))
+
+# clean up table for manuscript
+coef.bymenop = within(coef.bymenop, {
+  est.ci = paste0(formatC(round(Value, 3), format='f', digits=3),
+                  " (",
+                  formatC(round(Value - 1.96*Std.Error, 3), format='f', digits=3), ", ",
+                  formatC(round(Value + 1.96*Std.Error, 3), format='f', digits=3),
+                   ")")
+  byval.f = factor(byval, labels=c("Iron, post/post", 
+                                   "Iron, pre/post", 
+                                   "Iron, pre/pre", 
+                                   "Ferritin, post/post", 
+                                   "Ferritin, pre/post", 
+                                   "Ferritin, pre/pre", 
+                                   "Transferrin Saturation, post/post",
+                                   "Transferrin Saturation, pre/post",
+                                   "Transferrin Saturation, pre/pre"))
+  byval.f.iron = factor(byval, labels=c(rep("Iron", 3),
+                                        rep("Ferritin", 3),
+                                        rep("Transferrin Saturation", 3)))
+  byval.f.menop = factor(byval, labels=rep(c("post/post", "pre/post", "pre/pre"),3))
+})
+
+# head(coef.bymenop); tail(coef.bymenop)
+
+t.fe2 = reshape2::dcast(coef.bymenop, 
+                     byval.f.iron + byval.f.menop ~ coef.name, 
+                     value.var="est.ci")
+
+kable(t.fe2, 
+      booktabs=T,
+      col.names = c("Serum value", "Menopause Status", "Intercept",
+                    "Age", "Nail (yes=1 vs. no=0)", "Age x Nail"),
+      caption="Regression coefficients for mixed effects models by iron outcome and menopause status (status at baseline/follow-up)") %>%
+  kable_styling(latex_options = c("HOLD_position")) %>%
+  column_spec(column = 1, width = "1in")  %>%
+  column_spec(column = 2, width = "1in")  %>%
+  column_spec(column = 3, width = "1.2in")  %>%
+  column_spec(column = 4, width = "1.2in")  %>%
+  column_spec(column = 5, width = "1.2in")  %>%
+  collapse_rows(columns=1, valign="top") 
+  
+
+```
+
+\clearpage
+\newpage
+
+<!-- Source: section7.Rmd -->
+
+
+<!-- ![Toenail iron levels by month in replication sample](RTI-season.png) -->
+
+<!-- Note: Solid line represents predicted values from linear regression with sine/cosine pairs. -->

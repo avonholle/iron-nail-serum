@@ -1,0 +1,279 @@
+---
+title: "Section 5: Comparison difference in Spearman correlation coefficient between two time points of serum and nail iron measures"
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+    highlight: tango
+  html_document:
+    theme: united
+    toc: no
+editor_options:
+  chunk_output_type: console
+bibliography: ../iron.bib
+header-includes:
+ \usepackage{float}
+---
+
+# Comparison of iron measures change over two time points using Spearman correlation coefficient # {#section5-spearman}
+
+
+```{r setup5s, include=FALSE}
+knitr::opts_chunk$set(echo = T, 
+                      results = 'markup',
+                      warning = F,
+                      message=F,
+                      fig.pos = 'H',
+                      fig.align="center")
+
+#runif(1, 0, 10^8)
+set.seed(74268794)
+
+```
+
+
+```{r, include=F}
+# bring in packages
+require(knitr)
+require(haven)
+require(data.table)
+require(ggplot2)
+require(kableExtra)
+
+library(dplyr)
+library(tidyr)
+
+library(boot)
+
+```
+
+
+```{r, results='hide'}
+
+load(file="../sections/updated-data-iron.RData") # sub.dat is subset, all.dat is total data
+
+nail.names2
+iron.names2
+serum.names2
+
+
+```
+
+```{r}
+
+# Source: frequencies.Rmd
+load(file="../sections/ids-include-basefu.RData") # baseline.all.id, fu.all.id, base.fu.all.id
+
+# fu.all.id = id of people with all serum and nail measures at follow-up 
+# baseline.all.id = id of people with all baseline serum and nail measures
+# base.fu.all.id =  id of people with all baseline serum and nail measures AND follow-up measures
+```
+
+
+```{r}
+# Get ids of people with paired measures for both time points
+nrow(sub.dat)
+dt = data.table(sub.dat)
+
+# Counts of non-missing combinations of fe/fertn/fesat + NAIL values at baseline 
+misst1 = dcast(dt, (!(is.na(UMN_Iron_Baseline_FE) | is.na(UMN_Iron_Baseline_FERTN) | is.na(UMN_Iron_Baseline_FESAT))) ~ (!(is.na(DC_Baseline_Toenail_Fe))),
+      value.var='PSID', length)
+misst1
+
+# Counts of non-missing combinations of fe values at baseline and second measure
+misst2 = dcast(dt, ( (!(is.na(sub.dat$UMN_Iron_SCL_FE) | is.na(sub.dat$UMN_Iron_SCL_FERTN) | is.na(sub.dat$UMN_Iron_SCL_FESAT))) ) ~ (!(is.na(DC_SCL_Toenail_Fe))),
+      value.var='PSID', length)
+misst2
+
+paired.id.t1 = sub.dat[(!(is.na(sub.dat$UMN_Iron_Baseline_FE) | is.na(sub.dat$UMN_Iron_Baseline_FERTN) | is.na(sub.dat$UMN_Iron_Baseline_FESAT))) & (!(is.na(sub.dat$DC_Baseline_Toenail_Fe))), ]$PSID
+length(paired.id.t1)
+
+
+paired.id.t2 = sub.dat[(!(is.na(sub.dat$UMN_Iron_SCL_FE) | is.na(sub.dat$UMN_Iron_SCL_FERTN) | is.na(sub.dat$UMN_Iron_SCL_FESAT))) & (!(is.na(sub.dat$DC_SCL_Toenail_Fe))), ]$PSID
+length(paired.id.t2)
+
+summary(sub.dat[sub.dat$PSID %in% paired.id.t1, c("UMN_Iron_SCL_FE", "DC_SCL_Toenail_Fe", "DC_Baseline_Toenail_Fe",
+                                                 "UMN_Iron_SCL_FERTN")])
+hist(sub.dat$DC_SCL_Toenail_Fe)
+hist(sub.dat$DC_Baseline_Toenail_Fe)
+
+```
+
+```{r, include=F}
+
+# baseline
+
+dat.long.baseline <- 
+  sub.dat[sub.dat$PSID %in% base.fu.all.id ,] %>% 
+  dplyr::select(c(UMN_Iron_Baseline_FE, UMN_Iron_Baseline_FERTN, UMN_Iron_Baseline_FESAT,DC_Baseline_Toenail_Fe,
+                  subcohort.nocases,
+                  PSID)) %>% 
+  pivot_longer(cols = -c("PSID", 'subcohort.nocases'),
+               values_drop_na=T)
+
+table(dat.long.baseline$name)
+
+dat.long.baseline = within(dat.long.baseline, {
+  no.case = factor(subcohort.nocases,
+                   labels=c("No", "Yes"))
+  name.f = factor(name, labels=c("Nail", "Iron", "Ferritin", "Transferrin Saturation"))
+})
+
+colnames(dat.long.baseline)[which(colnames(dat.long.baseline) %in% "value")] = "value.t1"
+
+length(unique(dat.long.baseline$PSID))
+
+
+dim(dat.long.baseline)
+head(dat.long.baseline)
+
+# time 2
+
+dat.long.t2 <- 
+  sub.dat[sub.dat$PSID %in% paired.id.t2,] %>% 
+  dplyr::select(c(UMN_Iron_SCL_FE, UMN_Iron_SCL_FERTN, UMN_Iron_SCL_FESAT,DC_SCL_Toenail_Fe,
+                  subcohort.nocases,
+                  PSID)) %>% 
+  pivot_longer(cols = -c("PSID", 'subcohort.nocases'),
+               values_drop_na=T)
+
+dat.long.t2 = within(dat.long.t2, {
+  no.case = factor(subcohort.nocases,
+                   labels=c("No", "Yes"))
+  name.f = factor(name, labels=c("Nail", "Iron", "Ferritin", "Transferrin Saturation"))
+})
+
+colnames(dat.long.t2)[which(colnames(dat.long.t2) %in% "value")] = "value.t2"
+
+dim(dat.long.t2)
+length(unique(dat.long.t2$PSID))
+summary(dat.long.t2)
+table(dat.long.t2$name)
+head(dat.long.t2)
+
+dat.long = merge(dat.long.baseline[c("PSID", "name.f", "value.t1")],
+                 dat.long.t2[c("PSID", "name.f", "value.t2")], 
+                 by=c("PSID", "name.f"))
+dim(dat.long)
+head(dat.long)
+
+extreme.id = sub.dat[which(sub.dat$DC_Baseline_Toenail_Fe==max(sub.dat$DC_Baseline_Toenail_Fe, na.rm=T) |
+                             sub.dat$DC_SCL_Toenail_Fe==max(sub.dat$DC_SCL_Toenail_Fe, na.rm=T)),]$PSID
+extreme.id
+dat.long[dat.long$PSID %in% extreme.id,]
+
+dat.long = dat.long[!(dat.long$PSID %in% extreme.id),]
+nrow(dat.long)
+summary(dat.long)
+
+```
+
+
+
+
+```{r, results='hide'}
+
+# source: https://content.csbs.utah.edu/~rogers/datanal/labprj/bootstrap/index.html
+
+nail = dat.long[dat.long$name.f=="Nail", c("value.t1", "value.t2")]
+ferritin = dat.long[dat.long$name.f=="Ferritin", c("value.t1", "value.t2")]
+fe = dat.long[dat.long$name.f=="Iron", c("value.t1", "value.t2")]
+fesat = dat.long[dat.long$name.f=="Transferrin Saturation", c("value.t1", "value.t2")]
+head(nail)
+
+dim(nail)
+dim(ferritin)
+
+# Spearman's correlation from observed data
+
+# function to get correlation
+getcor <- function(x, ndx) {
+  dat1.cor = cor(x[ndx,1], x[ndx,2], method="spearman")
+    return(dat1.cor)
+}
+
+# check
+cor(nail[,1], nail[,2], method="spearman")
+getcor(nail)
+
+# bootstrap spearman correlation for two time points
+nail.boot <- boot(nail, getcor, R=1000, stype="i")
+fe.boot <- boot(fe, getcor, R=1000, stype="i")
+ferritin.boot <- boot(ferritin, getcor, R=1000, stype="i")
+fesat.boot <- boot(fesat, getcor, R=1000, stype="i")
+
+# function to compare nail with serum
+get.dat = function(dat, serum){
+  
+  diff = nail.boot$t - dat$t # nail spearman - serum spearman
+
+  mean.diff = mean(diff); mean.diff
+  se.diff = sd(diff); se.diff # get sd of sampling dist = se
+  
+  uci = mean.diff + 1.96*se.diff ; uci
+  lci = mean.diff - 1.96*se.diff ; lci
+  
+  return(data.frame(serum=serum,
+                    mean.nail=mean(nail.boot$t),
+                    mean.serum=mean(dat$t), 
+                    mean.diff = mean.diff, se = se.diff, 
+                    uci=uci, lci=lci))
+}
+
+dat.summary = rbind.data.frame( get.dat(fe.boot, "fe"),
+                                get.dat(ferritin.boot, "ferritin"),
+                                get.dat(fesat.boot, "transferrin saturation") )
+dat.summary
+
+names(dat.summary) = c("Serum measure",
+                       "Spearman, nail", "Spearman, serum",
+                       "nail-serum", "se diff", "uci", "lci")
+```
+
+```{r}
+kable(dat.summary, booktabs=T)
+
+
+```
+
+## Just confidence intervals for the spearman correlations
+
+```{r}
+
+# function to compare nail with serum
+get.dat2 = function(dat, serum){
+  
+  val = dat$t # nail spearman - serum spearman
+
+  mean.val = mean(val); mean.val
+  se.val = sd(val); se.val # get sd of sampling dist = se
+  
+  uci = mean.val + 1.96*se.val ; uci
+  lci = mean.val - 1.96*se.val ; lci
+  
+  return(data.frame(serum=serum,
+                    mean.serum=mean(dat$t), 
+                    mean.val = mean.val, 
+                    se = se.val, 
+                    uci=uci, 
+                    lci=lci))
+}
+
+dat.summary2 = rbind.data.frame( get.dat2(nail.boot, "nail"),
+                                get.dat2(fe.boot, "fe"),
+                                get.dat2(ferritin.boot, "ferritin"),
+                                get.dat2(fesat.boot, "transferrin saturation") )
+dat.summary2
+
+names(dat.summary) = c("Serum measure",
+                       "Spearman, nail", "Spearman, serum",
+                       "nail-serum", "se diff", "uci", "lci")
+```
+
+```{r}
+kable(dat.summary2, booktabs=T)
+
+save(dat.summary, dat.summary2, file="section5-spearman.RData")
+
+```

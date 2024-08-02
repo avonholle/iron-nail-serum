@@ -1,0 +1,387 @@
+---
+title: "Section 4: Cross-sectional comparison of serum and nail measures, coefficient of variation"
+output:
+  pdf_document:
+    number_sections: yes
+    toc: no
+    highlight: tango
+  html_document:
+    theme: united
+    toc: no
+urlcolor: blue
+editor_options:
+  chunk_output_type: console
+bibliography: ../iron.bib
+---
+
+# Cross-sectional comparison of serum and nail coefficient of variation with methods from R cvequality package. # {#cv}
+
+
+```{r setup4, include=FALSE}
+knitr::opts_chunk$set(echo = F,
+                      results = 'hide',
+                      warning = F,
+                      fig.pos = 'H')
+
+#runif(1, 0, 10^8)
+set.seed(74268794)
+
+```
+
+
+```{r, include=F}
+# bring in packages
+library(cvequality)
+library(dplyr)
+library(tidyr)
+library(plyr)
+library(kableExtra)
+library(ggplot2)
+library(data.table)
+
+```
+
+
+```{r, results='hide', echo=F}
+
+load(file="../sections/updated-data-iron.RData") # sub.dat is subset, all.dat is total data
+
+nail.names2
+iron.names2
+serum.names2
+
+```
+
+
+
+```{r}
+# get ids for analysis subset
+
+# Source: frequencies.Rmd
+load(file="ids-include-basefu.RData") # baseline.all.id, fu.all.id, base.fu.all.id
+
+# fu.all.id = id of people with all serum and nail measures at follow-up 
+# baseline.all.id = id of people with all baseline serum and nail measures
+# base.fu.all.id =  id of people with all baseline serum and nail measures AND follow-up measures
+
+```
+
+
+```{r}
+
+# subset to ids with nail and serum values at baseline and follow-up
+sub.dat = sub.dat[sub.dat$PSID %in% baseline.all.id,]
+
+# Get ids of people with paired measures for both time points
+nrow(sub.dat)
+dt = data.table(sub.dat)
+
+# Counts of non-missing combinations of fe/fertn/fesat + NAIL values at baseline 
+misst1 = dcast(dt, (!(is.na(UMN_Iron_Baseline_FE) | is.na(UMN_Iron_Baseline_FERTN) | is.na(UMN_Iron_Baseline_FESAT))) ~ (!(is.na(DC_Baseline_Toenail_Fe))),
+      value.var='PSID', length)
+misst1
+
+# Counts of non-missing combinations of fe values at baseline and second measure
+misst2 = dcast(dt, ( (!(is.na(sub.dat$UMN_Iron_SCL_FE) | is.na(sub.dat$UMN_Iron_SCL_FERTN) | is.na(sub.dat$UMN_Iron_SCL_FESAT))) ) ~ (!(is.na(DC_SCL_Toenail_Fe))),
+      value.var='PSID', length)
+misst2
+
+paired.id.t1 = sub.dat[(!(is.na(sub.dat$UMN_Iron_Baseline_FE) | is.na(sub.dat$UMN_Iron_Baseline_FERTN) | is.na(sub.dat$UMN_Iron_Baseline_FESAT))) & (!(is.na(sub.dat$DC_Baseline_Toenail_Fe))), ]$PSID
+length(paired.id.t1)
+
+
+paired.id.t2 = sub.dat[(!(is.na(sub.dat$UMN_Iron_SCL_FE) | is.na(sub.dat$UMN_Iron_SCL_FERTN) | is.na(sub.dat$UMN_Iron_SCL_FESAT))) & (!(is.na(sub.dat$DC_SCL_Toenail_Fe))), ]$PSID
+length(paired.id.t2)
+
+summary(sub.dat[sub.dat$PSID %in% paired.id.t1, c("UMN_Iron_SCL_FE", "DC_SCL_Toenail_Fe", "DC_Baseline_Toenail_Fe",
+                                                 "UMN_Iron_SCL_FERTN")])
+hist(sub.dat$DC_SCL_Toenail_Fe)
+hist(sub.dat$DC_Baseline_Toenail_Fe)
+
+```
+
+## Coefficient of variation for nail and serum measures at baseline
+
+
+```{r}
+# Make long style data frame for all 3 serum iron measures
+
+dat.long <- 
+  sub.dat[sub.dat$PSID %in% paired.id.t1,] %>% 
+  dplyr::select(c(UMN_Iron_Baseline_FE, UMN_Iron_Baseline_FERTN, UMN_Iron_Baseline_FESAT,
+                  DC_Baseline_Toenail_Fe,
+                  subcohort.nocases,
+                  PSID)) %>% 
+  pivot_longer(cols = -c("PSID", 'subcohort.nocases'),
+               values_drop_na=T)
+
+levels(factor(dat.long$name))
+
+dat.long = within(dat.long, {
+  no.case = factor(subcohort.nocases,
+                   labels=c("No", "Yes"))
+  name.f = factor(name, labels=c("Toenail Iron", "Serum Iron", "Ferritin", "Transferrin Saturation"))
+})
+
+head(dat.long)
+dim(dat.long)
+length(unique(dat.long$PSID))
+
+# remove outlier from nail data frame
+nrow(dat.long)
+
+
+extreme.id = sub.dat[which(sub.dat$DC_Baseline_Toenail_Fe==max(sub.dat$DC_Baseline_Toenail_Fe, na.rm=T) |
+                             sub.dat$DC_SCL_Toenail_Fe==max(sub.dat$DC_SCL_Toenail_Fe, na.rm=T)),]$PSID
+extreme.id
+
+sub.dat[sub.dat$PSID %in% extreme.id,c("PSID",
+                                       "DC_Baseline_Toenail_Fe",
+                                       "DC_SCL_Toenail_Fe")]
+
+dat.long = dat.long[!(dat.long$PSID %in% extreme.id),]
+nrow(dat.long)
+summary(dat.long)
+
+
+```
+
+
+
+
+```{r, results='markup'}
+
+# with outlier removed
+cv.f<-function(df){
+  # df=dat.long # debug
+  x=log(df$value)
+  cv = sd(x)/mean(x)
+  ct = length(x)
+  return(data.frame(cv=cv, n=ct))
+}
+
+# get cv info
+cv.1 <- dlply(dat.long, "name.f", cv.f)
+
+# return a data frame
+cv1.info = ldply(cv.1)
+names(cv1.info) = c("Measure", "CV", "n")
+cv1.info
+
+# counts
+cv.f.n<-function(df){
+  x=df$value
+  length(x)
+}
+# return a data frame with frequency for each cv
+cv.1.n = dlply(dat.long, "name.f", cv.f.n)
+
+cv1.info.n = ldply(cv.1.n)
+names(cv1.info.n) = c("Measure", "n")
+cv1.info.n
+
+```
+
+
+## Characterize and test equality of CV for the nail and serum measures
+
+Source: https://cran.r-project.org/web/packages/cvequality/vignettes/how_to_test_CVs.html
+
+Note: This test assumes independence between samples. Need to find a method that accounts for dependence and drawn from different distributions.
+
+```{r, results='markup'}
+
+# source: https://cran.r-project.org/web/packages/cvequality/vignettes/how_to_test_CVs.html
+
+# take a quick look
+kable(head(dat.long),
+      caption = "Preview of first few rows of the data")
+```
+
+## Look at variation of variables.
+
+```{r}
+ggplot(dat.long,
+       aes(name.f,
+           value)) +
+  geom_boxplot() +
+#  geom_quasirandom(alpha = 0.02) +
+  theme_bw()
+```
+
+## Look at variation of log-transformed variables.
+
+```{r}
+p.s4 = ggplot(dat.long,
+       aes(name.f,
+           log(value))) +
+  geom_boxplot() +
+#  geom_quasirandom(alpha = 0.02) +
+  theme_bw()
+
+p.s4
+```
+
+
+## Test if variation in log-transformed nail data is greater than the serum data
+
+```{r}
+
+get.test = function(iron.measure){
+
+  # iron.measure="Serum Iron"
+  sub.dat = dat.long.ind[dat.long.ind$name.f %in% c(iron.measure, "Toenail Iron"),]
+  x = log(sub.dat$value); head(x)
+  y = sub.dat$name.f;  y = factor(y); head(y)
+
+  iron.asymptotic.test = asymptotic_test(x,y)
+
+  iron.mlrt.test = mslr_test(nr = 1e4,
+                             log(x), y)
+  
+  return(data.frame(serum.val = iron.measure,
+           D_AD = as.numeric(iron.asymptotic.test$D_AD), 
+           p_value = as.numeric(iron.asymptotic.test$p_value),
+           MSLRT = as.numeric(iron.mlrt.test$MSLRT),
+           mslrt.pvalue = as.numeric(iron.mlrt.test$p_value)))
+}
+
+
+```
+
+```{r}
+# get people with serum values and no nail measures and all nail measures
+psid.nail = unique(dat.long[dat.long$name.f=="Toenail Iron",]$PSID)
+length(psid.nail)
+
+psid.fe = unique(dat.long[dat.long$name.f=="Serum Iron",]$PSID)
+length(psid.fe)
+
+both = psid.fe[psid.fe %in% psid.nail]
+length(both)
+
+dat.long.ind = rbind.data.frame(dat.long[dat.long$name.f=="Toenail Iron",],
+                                dat.long[!(dat.long$name.f %in% "Toenail Iron") & !(dat.long$PSID %in% both),])
+
+head(dat.long.ind)
+
+```
+
+Using the [cvequality package](https://rdrr.io/cran/cvequality/f/vignettes/how_to_test_CVs.Rmd) in R, calculate the 'Asymptotic test for the equality of coefficients of variation from k populations' (Feltz and Miller 1996) and 'Modified signed-likelihood ratio test (SLRT) for equality of CVs' (Krishnamoorthy and Lee 2014) tests.
+
+
+```{r, results='markup'}
+
+# get all nail measures and no serum values for people with nail values
+table(dat.long$name.f)
+table(dat.long.ind$name.f)
+
+s4dat = rbind(get.test("Serum Iron"),
+      get.test("Ferritin"),
+      get.test("Transferrin Saturation"))
+
+s4dat
+
+```
+
+
+Strong evidence that there is increased variability between the nail and serum measures.
+
+
+## Coefficient of variation for nail and serum measures at time 2
+
+
+```{r}
+# Make long style data frame for all 3 serum iron measures
+
+dat.long2 <- 
+  sub.dat[sub.dat$PSID %in% paired.id.t2,] %>% 
+  dplyr::select(c(UMN_Iron_SCL_FE, UMN_Iron_SCL_FERTN, UMN_Iron_SCL_FESAT,
+                  DC_SCL_Toenail_Fe,
+                  subcohort.nocases,
+                  PSID)) %>% 
+  pivot_longer(cols = -c("PSID", 'subcohort.nocases'),
+               values_drop_na=T)
+
+levels(factor(dat.long2$name))
+
+
+addline_format <- function(x,...){
+    gsub('\\s','\n',x)
+}
+
+dat.long2 = within(dat.long2, {
+  no.case = factor(subcohort.nocases,
+                   labels=c("No", "Yes"))
+  name.f = factor(name, labels=c("Toenail Iron", 
+                                 "Serum Iron", 
+                                 "Ferritin", 
+                                 "Transferrin Saturation"))
+})
+
+
+# remove outlier from nail data frame
+
+dat.long2 = dat.long2[!(dat.long2$PSID %in% extreme.id),]
+nrow(dat.long2)
+summary(dat.long2)
+
+
+```
+
+
+
+
+```{r, results='markup'}
+
+# get cv info
+cv.2 <- dlply(dat.long2, "name.f", cv.f)
+
+# return a data frame
+cv2.info = ldply(cv.2)
+names(cv2.info) = c("Measure", "CV", "n")
+cv2.info
+
+# counts
+
+# return a data frame with frequency for each cv
+cv.2.n = dlply(dat.long2, "name.f", cv.f.n)
+
+cv2.info.n = ldply(cv.2.n)
+names(cv2.info.n) = c("Measure", "n")
+cv2.info.n
+
+```
+
+
+
+## Boxplots for baseline and follow-up measures in one figure
+
+```{r, fig.width=9, fig.height=5}
+
+dat.long$time = "Baseline"
+dat.long2$time = "Follow-up"
+dat.long.both = rbind.data.frame(dat.long, dat.long2)
+
+p.box = ggplot(dat.long.both,
+       aes(name.f,
+           log(value))) +
+  geom_boxplot() +
+  facet_grid(.~time) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2),
+                   labels=function(x){sub("\\s", "\n", x)}) + # source: https://stackoverflow.com/questions/20123147/add-line-break-to-axis-labels-and-ticks-in-ggplot/39901880
+  labs(x=" ") +
+#  geom_quasirandom(alpha = 0.02) +
+  theme_bw(base_size=20)
+
+p.box
+
+```
+
+
+```{r}
+
+save(s4dat, cv1.info, cv2.info, p.s4, p.box, file="section4-dat-log.RData")
+
+```
+

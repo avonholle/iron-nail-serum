@@ -1,0 +1,455 @@
+---
+title: "Frequencies by nail/serum and time status"
+output:
+  pdf_document:
+    toc: no
+    number_sections: true
+  html_document:
+    theme: united
+    toc: no
+    number_sections: true
+editor_options:
+  chunk_output_type: console
+header-includes:
+ \usepackage{float}
+---
+
+
+```{r setup-fq, include=FALSE}
+knitr::opts_chunk$set(echo = F, 
+                      results = 'hide',
+                      warning = F,
+                      fig.pos = 'H',
+                      float=F)
+
+#runif(1, 0, 10^8)
+set.seed(74268794)
+
+```
+
+
+```{r, include=F}
+# bring in packages
+require(knitr)
+require(data.table)
+require(kableExtra)
+
+```
+
+
+```{r}
+
+# from data-handling-cch.Rmd
+load(file="../sections/updated-data-iron.RData") # sub.dat is subset, all.dat is total data
+dim(sub.dat)
+#nail.names2
+#iron.names2
+
+extreme.ids = sub.dat[which(sub.dat$DC_Baseline_Toenail_Fe==max(sub.dat$DC_Baseline_Toenail_Fe, na.rm=T) |
+                             sub.dat$DC_SCL_Toenail_Fe==max(sub.dat$DC_SCL_Toenail_Fe, na.rm=T) |
+                              sub.dat$UMN_Iron_Baseline_FERTN == max(sub.dat$UMN_Iron_Baseline_FERTN, na.rm=T) |
+                              sub.dat$RTI_Toenail_fe == max(sub.dat$RTI_Toenail_fe, na.rm=T) |
+                              sub.dat$UMN_Iron_SCL_FERTN == max(sub.dat$UMN_Iron_SCL_FERTN, na.rm=T)),]$PSID
+extreme.ids
+
+sub.dat[sub.dat$PSID %in% extreme.ids, c("PSID", "DC_Baseline_Toenail_Fe", "DC_SCL_Toenail_Fe",
+                                         'UMN_Iron_Baseline_FERTN',
+                                         'RTI_Toenail_fe',
+                                         'UMN_Iron_SCL_FERTN')]
+
+summary(sub.dat[,c('UMN_Iron_Baseline_FE',
+                   'UMN_Iron_Baseline_FERTN',
+                   'UMN_Iron_Baseline_FESAT',
+                   'DC_Baseline_Toenail_Fe',
+                   'RTI_Toenail_fe',
+                   'UMN_Iron_SCL_FE',
+                   'UMN_Iron_SCL_FERTN',
+                   'UMN_Iron_SCL_FESAT',
+                   'DC_SCL_Toenail_Fe'
+                   )])
+
+```
+
+
+
+## All, combos of all three values. Dartmouth nail values
+
+```{r}
+
+dt = data.table(sub.dat[!(sub.dat$PSID %in% extreme.ids),])
+sub.dat2 = sub.dat[!(sub.dat$PSID %in% extreme.ids),]
+
+sub.dat2 = within(sub.dat2,{ 
+  no.miss.fe.base = !(is.na(UMN_Iron_Baseline_FE))
+  no.miss.fertn.base = !(is.na(UMN_Iron_Baseline_FERTN))
+  no.miss.fesat.base = !(is.na(UMN_Iron_Baseline_FESAT))
+  no.miss.nail.base = !(is.na(DC_Baseline_Toenail_Fe))
+  no.miss.nail.rti.base = !(is.na(RTI_Toenail_fe))
+
+  no.miss.fe.t2 = !(is.na(UMN_Iron_SCL_FE))
+  no.miss.fertn.t2 = !(is.na(UMN_Iron_SCL_FERTN))
+  no.miss.fesat.t2 = !(is.na(UMN_Iron_SCL_FESAT))
+  no.miss.nail.t2 = !(is.na(DC_SCL_Toenail_Fe))
+})
+
+dim(sub.dat2)
+
+```
+
+```{r, results='markup'}
+
+baseline = with(sub.dat2, table(no.miss.fertn.base, no.miss.fe.base, no.miss.fesat.base, no.miss.nail.base))
+
+# table of people by measure at baseline
+kable(data.frame(baseline), booktabs=T,
+            caption="All possible combinations of serum and nail measures at baseline")  %>%
+  kable_styling(latex_options = c("HOLD_position"))
+
+# get id of people with all baseline serum and nail measures
+baseline.all.id = sub.dat2[sub.dat2$no.miss.fertn.base==T & 
+                             sub.dat2$no.miss.fe.base==T &
+                             sub.dat2$no.miss.fesat.base==T &
+                             sub.dat2$no.miss.nail.base==T,]$PSID
+
+length(baseline.all.id)
+
+# table of people by measure at time 2
+t2 = with(sub.dat2, table(no.miss.fertn.t2, no.miss.fe.t2, no.miss.fesat.t2, no.miss.nail.t2))
+kable(data.frame(t2), booktabs=T,
+            caption="All possible combinations of serum and nail measures at second measure") %>%
+  kable_styling(latex_options = c("HOLD_position"))
+
+# table of people by measure at time 2 from those who had all measures at baseline
+baseline.t2 = with(sub.dat2[sub.dat2$PSID %in% baseline.all.id,], table(no.miss.fertn.t2, no.miss.fe.t2, no.miss.fesat.t2, no.miss.nail.t2))
+
+# get id of people with all baseline serum and nail measures AND follow-up measures
+fu.all.id = sub.dat2[which(sub.dat2$no.miss.fertn.t2==T & 
+                             sub.dat2$no.miss.fe.t2==T &
+                             sub.dat2$no.miss.fesat.t2==T &
+                             sub.dat2$no.miss.nail.t2==T),]$PSID
+length(fu.all.id)
+
+base.fu.all.id = fu.all.id[which(fu.all.id %in% baseline.all.id)]
+length(base.fu.all.id)
+
+kable(tail(data.frame(baseline.t2)), booktabs=T,
+            caption="Combinations of serum and nail measures at second measure from 281 at baseline") %>%
+  kable_styling(full_width=T, latex_options = c("HOLD_position"))
+
+save(baseline.all.id, fu.all.id, base.fu.all.id, file="ids-include-basefu.RData")
+
+length(baseline.all.id)
+
+with(sub.dat2, table(no.miss.nail.rti.base))
+```
+
+
+## RTI data
+
+```{r, results='markup'}
+
+baseline = with(sub.dat2, table(no.miss.fertn.base, no.miss.fe.base, no.miss.fesat.base, no.miss.nail.rti.base))
+
+# table of people by measure at baseline
+kable(data.frame(baseline), booktabs=T,
+            caption="All possible combinations of serum and nail measures at baseline")  %>%
+  kable_styling(latex_options = c("HOLD_position"))
+
+# get id of people with all baseline serum and nail measures
+baseline.all.id = sub.dat2[sub.dat2$no.miss.fertn.base==T & 
+                             sub.dat2$no.miss.fe.base==T &
+                             sub.dat2$no.miss.fesat.base==T &
+                             sub.dat2$no.miss.nail.rti.base==T,]$PSID
+length(baseline.all.id)
+
+```
+
+
+```{r, results='markup'}
+
+
+baseline2 = with(sub.dat2, table(no.miss.fertn.base, no.miss.fe.base, no.miss.fesat.base, no.miss.nail.rti.base))
+
+# table of people by measure at baseline
+kable(data.frame(baseline2), booktabs=T,
+            caption="All possible combinations of serum and nail measures at baseline")  %>%
+  kable_styling(latex_options = c("HOLD_position"))
+
+# get id of people with all baseline serum and nail measures
+baseline.all.id = sub.dat2[sub.dat2$no.miss.fertn.base==T & 
+                             sub.dat2$no.miss.fe.base==T &
+                             sub.dat2$no.miss.fesat.base==T &
+                             sub.dat2$no.miss.nail.rti.base==T,]$PSID
+length(baseline.all.id)
+
+```
+
+
+### Iron
+
+```{r, results='markup'}
+with(sub.dat2, table(no.miss.fe.base, no.miss.nail.rti.base))
+```
+
+### Ferritin
+
+```{r, results='markup'}
+with(sub.dat2, table(no.miss.fertn.base, no.miss.nail.rti.base))
+```
+
+### Transferrin saturation
+
+```{r, results='markup'}
+with(sub.dat2, table(no.miss.fesat.base, no.miss.nail.rti.base))
+```
+
+
+
+## Total sample, Dartmouth nail values.
+
+```{r}
+
+# Get cell counts
+# FE ====================
+# counts of non-missing combinations of fe values at baseline
+t1=dcast(dt, !(is.na(UMN_Iron_Baseline_FE)) ~ !(is.na(DC_Baseline_Toenail_Fe)),
+      value.var='PSID', length)
+t1
+
+# counts of non-missing combinations of fe values at second measure
+t2=dcast(dt, !(is.na(UMN_Iron_SCL_FE)) ~ !(is.na(DC_SCL_Toenail_Fe)),
+      value.var='PSID', length)
+t2
+
+# Counts of non-missing combinations of fe values at baseline and second measure
+t3=dcast(dt, (!(is.na(UMN_Iron_SCL_FE)) & !(is.na(UMN_Iron_Baseline_FE))) ~ (!(is.na(DC_SCL_Toenail_Fe)) & !(is.na(DC_Baseline_Toenail_Fe))),
+      value.var='PSID', length)
+t3
+
+# Ferritin ====================
+# counts of non-missing combinations of fe values at baseline
+t4=dcast(dt, !(is.na(UMN_Iron_Baseline_FERTN)) ~ !(is.na(DC_Baseline_Toenail_Fe)),
+      value.var='PSID', length)
+
+# counts of non-missing combinations of fe values at second measure
+t5=dcast(dt, !(is.na(UMN_Iron_SCL_FERTN)) ~ !(is.na(DC_SCL_Toenail_Fe)),
+      value.var='PSID', length)
+
+# Counts of non-missing combinations of fertn values at baseline and second measure
+t6=dcast(dt, (!(is.na(UMN_Iron_SCL_FERTN)) & !(is.na(UMN_Iron_Baseline_FERTN))) ~ (!(is.na(DC_SCL_Toenail_Fe)) & !(is.na(DC_Baseline_Toenail_Fe))),
+      value.var='PSID', length)
+t6
+
+# All of the measures at both points
+# Counts of non-missing combinations of fertn values at baseline and second measure
+t7=dcast(dt, (!(is.na(UMN_Iron_SCL_FERTN)) & !(is.na(UMN_Iron_SCL_FE)) & !(is.na(UMN_Iron_SCL_FESAT)) & !(is.na(UMN_Iron_Baseline_FERTN)) & !(is.na(UMN_Iron_Baseline_FE)) & !(is.na(UMN_Iron_Baseline_FESAT)) ) ~ (!(is.na(DC_SCL_Toenail_Fe)) & !(is.na(DC_Baseline_Toenail_Fe))),
+      value.var='PSID', length)
+t7
+
+# counts of non-missing combinations of all serum values at baseline
+t8=dcast(dt,  !(is.na(UMN_Iron_Baseline_FERTN)) & !(is.na(UMN_Iron_Baseline_FE)) & !(is.na(UMN_Iron_Baseline_FESAT)) ~ !(is.na(DC_Baseline_Toenail_Fe)),
+      value.var='PSID', length)
+t8
+
+# Counts of non-missing combinations of fesat values at baseline and second measure
+t9 = dcast(dt, ( !(is.na(UMN_Iron_SCL_FESAT)) &  !(is.na(UMN_Iron_Baseline_FESAT)) ) ~ (!(is.na(DC_SCL_Toenail_Fe)) & !(is.na(DC_Baseline_Toenail_Fe))),
+      value.var='PSID', length)
+
+t9
+
+
+```
+
+
+### Iron
+
+#### counts of non-missing combinations  at baseline
+
+```{r, results='markup'}
+
+kable(data.frame(t1), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+#### counts of non-missing combinations  at second measure
+
+```{r, results='markup'}
+
+kable(data.frame(t2), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+#### counts of non-missing combinations  at baseline and second measure
+
+
+```{r, results='markup'}
+
+kable(data.frame(t3), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+
+
+### Ferritin
+
+#### counts of non-missing combinations at baseline
+
+```{r, results='markup'}
+
+kable(data.frame(t4), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+#### counts of non-missing combinations at second measure
+
+```{r, results='markup'}
+
+kable(data.frame(t5), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+#### counts of non-missing combinations values at baseline and second measure
+
+```{r, results='markup'}
+
+kable(data.frame(t3), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+### FE saturation
+
+#### counts of non-missing combinations values at baseline and second measure
+
+```{r, results='markup'}
+
+kable(data.frame(t9), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+
+```
+
+## Non-cases
+
+```{r}
+
+# Get cell counts
+dt2=data.table(all.dat[all.dat$event==0 & !(all.dat$PSID %in% extreme.ids),])
+
+# FE ====================
+# counts of non-missing combinations of fe values at baseline
+t1=dcast(dt2, !(is.na(UMN_Iron_Baseline_FE)) ~ !(is.na(DC_Baseline_Toenail_Fe)),
+      value.var='PSID', length)
+t1
+
+# counts of non-missing combinations of fe values at second measure
+t2=dcast(dt2, !(is.na(UMN_Iron_SCL_FE)) ~ !(is.na(DC_SCL_Toenail_Fe)),
+      value.var='PSID', length)
+t2
+
+# Counts of non-missing combinations of fe values at baseline and second measure
+t3=dcast(dt2, (!(is.na(UMN_Iron_SCL_FE)) & !(is.na(UMN_Iron_Baseline_FE))) ~ (!(is.na(DC_SCL_Toenail_Fe)) & !(is.na(DC_Baseline_Toenail_Fe))),
+      value.var='PSID', length)
+t3
+
+# Ferritin ====================
+# counts of non-missing combinations of fertn values at baseline
+t4=dcast(dt2, !(is.na(UMN_Iron_Baseline_FERTN)) ~ !(is.na(DC_Baseline_Toenail_Fe)),
+      value.var='PSID', length)
+
+# counts of non-missing combinations of fertn values at second measure
+t5=dcast(dt2, !(is.na(UMN_Iron_SCL_FERTN)) ~ !(is.na(DC_SCL_Toenail_Fe)),
+      value.var='PSID', length)
+
+# Counts of non-missing combinations of fertn values at baseline and second measure
+t6=dcast(dt2, (!(is.na(UMN_Iron_SCL_FERTN)) & !(is.na(UMN_Iron_Baseline_FERTN))) ~ (!(is.na(DC_SCL_Toenail_Fe)) & !(is.na(DC_Baseline_Toenail_Fe))),
+      value.var='PSID', length)
+t6
+
+
+
+# Counts of non-missing combinations of fertn values at baseline and second measure
+t7 = dcast(dt2, (!(is.na(UMN_Iron_SCL_FESAT)) & !(is.na(UMN_Iron_Baseline_FESAT))) ~ (!(is.na(DC_SCL_Toenail_Fe)) & !(is.na(DC_Baseline_Toenail_Fe))),
+      value.var='PSID', length)
+t7
+
+```
+
+
+### Iron
+
+#### counts of non-missing combinations  at baseline
+
+```{r, results='markup'}
+
+kable(data.frame(t1), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+#### counts of non-missing combinations  at second measure
+
+```{r, results='markup'}
+
+kable(data.frame(t2), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+#### counts of non-missing combinations  at baseline and second measure
+
+
+```{r, results='markup'}
+
+kable(data.frame(t3), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+### Ferritin
+
+#### counts of non-missing combinations at baseline
+
+```{r, results='markup'}
+
+kable(data.frame(t4), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+#### counts of non-missing combinations at second measure
+
+```{r, results='markup'}
+
+kable(data.frame(t5), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+
+```
+
+#### counts of non-missing combinations values at baseline and second measure
+
+```{r, results='markup'}
+
+kable(data.frame(t6), 
+      col.names = c("Has serum value", "FALSE", "TRUE")) %>%
+  add_header_above(c(" " = 1, "Has nail value" = 2)) %>%
+  kable_styling(latex_options = c("HOLD_position"))
+```

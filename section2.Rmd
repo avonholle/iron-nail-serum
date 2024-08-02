@@ -1,0 +1,1020 @@
+---
+title: "Section 2: Scatter plots of nail vs serum measures"
+output:
+  pdf_document:
+    number_sections: yes
+    toc: no
+    highlight: tango
+  html_document:
+    theme: united
+    toc: no
+editor_options:
+  chunk_output_type: console
+header-includes:
+ \usepackage{float}
+---
+
+
+```{r setup2, include=FALSE}
+knitr::opts_chunk$set(echo = F, 
+                      results = 'hide',
+                      fig.keep="all",
+                      warning = F,
+                      fig.pos = 'H',
+                      fig.width=10,
+                      fig.height=6,
+                      message=F,
+                      float=F)
+
+#runif(1, 0, 10^8)
+set.seed(74268794)
+
+```
+
+
+```{r, include=F}
+# bring in packages
+require(knitr)
+require(haven)
+require(data.table)
+require(ggplot2)
+require(kableExtra)
+require(labelled)
+library(dplyr)
+library(tidyr)
+library(plyr)
+library(grid)
+require(deming)
+require(boot)
+```
+
+
+
+```{r, results='hide'}
+# source: data-handling-cch.Rmd
+load(file="../sections/updated-data-iron.RData") # sub.dat is subset, all.dat is total data
+
+nail.names2
+iron.names2
+serum.names2
+
+# NOTE: have to run section5-spearman.Rmd first 
+load(file="pca-info.RData") # pca.log, loading.matrix, pc.info
+
+dim(sub.dat)
+sub.dat = merge(sub.dat, pc.info, by="PSID", all.x=T)
+dim(sub.dat)
+summary(sub.dat[c("PC1", "PC1.scl")])
+```
+
+
+```{r}
+# get ids for analysis subset
+
+# Source: frequencies.Rmd
+load(file="ids-include-basefu.RData") # baseline.all.id, fu.all.id, base.fu.all.id
+
+# fu.all.id = id of people with all serum and nail measures at follow-up 
+# baseline.all.id = id of people with all baseline serum and nail measures
+# base.fu.all.id =  id of people with all baseline serum and nail measures AND follow-up measures
+
+length(baseline.all.id)
+length(base.fu.all.id)
+
+dim(sub.dat)
+
+```
+
+
+```{r}
+
+# Make long style data frame for 4 panel plot
+
+dat.long. <- 
+  sub.dat %>% 
+  dplyr::select(c(UMN_Iron_Baseline_FE, UMN_Iron_Baseline_FERTN, UMN_Iron_Baseline_FESAT, PC1,
+                  subcohort.nocases,
+                  PSID)) %>% 
+  pivot_longer(cols = -c("PSID", 'subcohort.nocases'),
+               values_drop_na=T)
+
+
+dat.long = merge(dat.long., sub.dat[complete.cases(sub.dat$DC_Baseline_Toenail_Fe),
+                                                   c("PSID", "DC_Baseline_Toenail_Fe")], 
+                 by="PSID",
+                 all.y=T)
+
+levels(factor(dat.long$name))
+
+dat.long = within(dat.long, {
+  no.case = factor(subcohort.nocases,
+                   labels=c("No", "Yes"))
+  name.f = factor(name, labels=c("PC1", "Iron", "Ferritin", "Transferrin Saturation"))
+  name.f2 = factor(name, labels=c("PC1", "Iron", "Ferritin", "Transferrin\n Saturation"))
+})
+
+colnames(dat.long)[which(colnames(dat.long) %in% "DC_Baseline_Toenail_Fe")]="Nail"
+
+head(dat.long)
+dim(dat.long)
+length(unique(dat.long$PSID))
+ids1 = unique(dat.long$PSID)
+
+summary(dat.long[dat.long$name.f=="Ferritin",])
+
+```
+
+
+```{r}
+# Make long style data frame for 4 panel plot: time 2
+
+dat.long.t2. <- 
+  sub.dat %>% 
+  dplyr::select(c(UMN_Iron_SCL_FE, UMN_Iron_SCL_FERTN, UMN_Iron_SCL_FESAT, PC1,
+                  subcohort.nocases,
+                  PSID)) %>% 
+  pivot_longer(cols = -c("PSID", 'subcohort.nocases'),
+               values_drop_na=T)
+
+
+dat.long.t2 = merge(dat.long.t2., sub.dat[complete.cases(sub.dat$DC_SCL_Toenail_Fe),
+                                                   c("PSID", "DC_SCL_Toenail_Fe")], 
+                 by="PSID",
+                 all.y=T)
+
+levels(factor(dat.long.t2$name))
+
+dat.long.t2 = within(dat.long.t2, {
+  no.case = factor(subcohort.nocases,
+                   labels=c("No", "Yes"))
+  name.f = factor(name, labels=c("PC1", "Iron", "Ferritin", "Transferrin Saturation"))
+  name.f2 = factor(name, labels=c("PC1", "Iron", "Ferritin", "Transferrin\n Saturation"))
+})
+
+colnames(dat.long.t2)[which(colnames(dat.long.t2) %in% "DC_SCL_Toenail_Fe")]="Nail"
+
+head(dat.long.t2)
+dim(dat.long.t2)
+length(unique(dat.long.t2$PSID))
+ids1.t2 = unique(dat.long.t2$PSID)
+
+summary(dat.long.t2[dat.long.t2$name.f=="Ferritin",])
+
+```
+
+
+```{r}
+
+# Just plots without any annotation
+
+dat.long$time="Baseline"; dat.long.t2$time="Follow-up"
+dim(dat.long)
+names(dat.long)
+table(dat.long$name)
+
+dat.long.both = rbind.data.frame(dat.long, dat.long.t2)
+head(dat.long.both)
+table(dat.long.both$name)
+
+dat.long.both = dat.long.both[which(!(dat.long.both$name.f=="PC1") & dat.long.both$PSID %in% baseline.all.id),]
+
+# get sample size by grouping
+# and add to plot per reviewer suggestion, 7/2022
+with(dat.long.both, table(time, name.f2))
+with(dat.long.both, table(time))
+head(dat.long.both)
+
+levels(dat.long.both$name.f2)
+levels(factor(dat.long.both$time))
+dat.long.both$time.f1 = factor(dat.long.both$time, 
+                               labels = c("Baseline\n (n=146)",
+                                          "Follow-up\n (n=86)"))
+  
+dat.long.both$name.f3 = factor(dat.long.both$name.f2, 
+                               labels = c("Iron (mcg/dL)",
+                                          "Ferritin (mcg/dL)",
+                                          "Transferrin \n Saturation (%)"))
+  
+scatter1 = ggplot(dat.long.both, 
+                  aes(y=log(Nail), x=log(value))) + 
+  geom_hex(binwidth=0.3) +
+  scale_fill_gradient(low="lightgray", high="black") +
+  #  geom_point(size=3, alpha=0.25) + 
+  labs(y="ln(Toenail (mcg/g))", 
+       x="ln(Serum measure)") +
+  theme_bw(base_size=30) +
+  facet_grid( time.f1 ~ name.f3) +#, scales = "free") +
+  theme(legend.position = "right",
+        legend.key.height = unit(1, 'cm')) #change legend key height 
+
+scatter1
+```
+
+```{r}
+
+cbb8  <- c("#000000", "#E69F00", "#56B4E9", "#009E73", 
+                       "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+pie(rep(1, 8), col = cbb8)
+
+scatter2 = ggplot(dat.long.both, 
+                  aes(y=log(Nail), x=log(value))) + 
+  geom_hex(binwidth=0.3) +
+  scale_fill_gradient(low=cbb8[5], high=cbb8[4]) +
+  #  geom_point(size=3, alpha=0.25) + 
+  labs(y="ln(Toenail (mcg/g))", 
+       x="ln(Serum measure)") +
+  theme_bw(base_size=30) +
+  facet_grid( time ~ name.f2) +#, scales = "free") +
+  theme(legend.position = "right") 
+
+scatter2
+
+```
+
+
+
+```{r}
+
+ggsave(file="scatter-ms.png", width = 16, height = 6, device='png', dpi=700)
+
+```
+
+```{r, include=F, eval=F}
+# info for simulations
+summary(sub.dat$fertn)
+summary(sub.dat$fe)
+summary(sub.dat$DC_Baseline_Toenail_Fe)
+
+# 'UMN_Iron_SCL_FERTN'
+#sub.dat.sub = sub.dat[complete.cases(sub.dat[,c("fertn", "DC_Baseline_Toenail_Fe")])==T,]
+sub.dat.sub = sub.dat[sub.dat$PSID %in% ids1,]
+dim(sub.dat.sub)
+
+cor(sub.dat.sub[,c("fertn", "DC_Baseline_Toenail_Fe")], use='complete.obs', method="spearman")
+
+cor.test(sub.dat.sub$fertn,
+         sub.dat.sub$DC_Baseline_Toenail_Fe)
+
+
+mean(sub.dat.sub$DC_Baseline_Toenail_Fe, na.rm=T)
+mean(sub.dat.sub$fertn, na.rm=T)
+
+sd(sub.dat.sub$DC_Baseline_Toenail_Fe, na.rm=T)
+sd(sub.dat.sub$fertn, na.rm=T)
+
+```
+
+
+# Scatter plots # {#scatter}
+
+## Baseline
+
+### Untransformed with outlier
+
+```{r}
+
+deming.r = function(df){
+  x=df$Nail
+  y=df$value 
+  pca <- prcomp(~x+y, df)
+  slp <- with(pca, rotation[2,1] / rotation[1,1])
+  int <- with(pca, center[2] - slp*center[1])
+  return(c(int=int,slp=slp))
+}
+
+# Source: https://stackoverflow.com/questions/1169539/linear-regression-and-group-by-in-r
+# Break up data frame by iron measure, then fit the specified model to each piece and
+# return a list
+models <- dlply(dat.long, "name.f", deming.r)
+# return a data frame
+model.info=ldply(models); model.info
+
+#merge line info onto plot data
+dat.long1 = merge(dat.long, model.info, by="name.f")
+head(dat.long1)
+
+ggplot(dat.long1, aes(Nail, value, colour=no.case)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=FALSE) +
+  facet_wrap(.~name.f,scales = "free")+
+  geom_abline(aes(slope=slp, intercept=int.y), color="blue") +
+  labs(x="Toenail (mcg/g)", 
+       y="Serum (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw()
+
+```
+
+
+### Untransformed without outlier
+
+#### Information on outlier
+
+```{r}
+  
+extreme.id = sub.dat[which(sub.dat$DC_Baseline_Toenail_Fe==max(sub.dat$DC_Baseline_Toenail_Fe, na.rm=T)),]$PSID
+
+extreme.id
+sub.dat[sub.dat$PSID %in% c(extreme.id),]$DC_Baseline_Toenail_Fe
+sub.dat[sub.dat$PSID %in% c(extreme.id),'UMN_Iron_Baseline_FERTN']
+
+
+```
+
+#### Plot
+
+```{r}
+
+#dim(sub.dat)
+dat.long1 = dat.long1[!(dat.long1$PSID %in% extreme.id),]
+#dim(sub.dat1)
+
+summary(dat.long1[dat.long1$name.f=="Ferritin",])
+
+# get Deming regression info
+models1 <- dlply(dat.long1, "name.f", deming.r)
+# return a data frame
+model.info1=ldply(models1); model.info1
+names(model.info1) = c("name.f", "int.1", "slp.1")
+#merge line info onto plot data
+dat.long2 = merge(dat.long1, model.info1, by="name.f")
+head(dat.long2)
+
+
+p1 = ggplot(dat.long2, aes(Nail, value, colour=no.case)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=FALSE) +
+  facet_wrap(.~name.f)+
+  geom_abline(aes(slope=slp.1, intercept=int.1), color="blue") +
+  labs(x="Toenail (mcg/g)", 
+       y="Serum (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw()
+
+p1
+```
+
+
+### log transformed without outlier
+
+```{r}
+deming.r.log = function(df){
+  x=log(df$Nail)
+  if(df$name.f[1]=="PC1") y=df$value else y=log(df$value)
+  pca <- prcomp(~x+y, df)
+  slp <- with(pca, rotation[2,1] / rotation[1,1])
+  int <- with(pca, center[2] - slp*center[1])
+  
+  ols.m = lm(y~x)
+  return(c(int=int,slp=slp, int.ols=coef(ols.m)[1], slp.ols=coef(ols.m)[2]))
+}
+
+# get Deming regression info
+models2 <- dlply(dat.long1, "name.f", deming.r.log)
+# return a data frame
+model.info2=ldply(models2); model.info2
+names(model.info2) = c("name.f", "int.2", "slp.2", "int.ols", "slp.ols")
+#merge line info onto plot data
+dat.long3 = merge(dat.long2, model.info2, by="name.f")
+head(dat.long3)
+
+
+p1 = ggplot(dat.long3, aes(log(Nail), log(value), colour=no.case)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=FALSE) +
+  facet_wrap(.~name.f, scales = "free", ncol=4)+
+  geom_abline(aes(slope=slp.2, intercept=int.2), color="blue") +
+  # geom_text(aes(2, 2, label = paste(#"Adj R2 = ", adj.r.squared, "\n",
+  #                                  "Deming regression \n",
+  #                                  "Intercept =", round(int.2,2), "\n",
+  #                                  "Slope =", round(slp.2,2), "\n"#,
+  #                                  #"P =", pvalue
+  #                                  )), color="blue") +
+  # geom_text(aes(4, 2, label = paste(#"Adj R2 = ", adj.r.squared, "\n",
+  #                                  "OLS regression \n",
+  #                                  "Intercept =", round(int.ols,2), "\n",
+  #                                  "Slope =", round(slp.ols,2), "\n"#,
+  #                                  #"P =", pvalue
+  #                                  )), color="green") +
+  labs(x="log(Toenail (mcg/g))", 
+       y="log(Serum (mcg/dL))") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  labs(caption = "Note: Green line is OLS fit and blue line is Deming regression")
+  
+
+p1
+```
+
+
+```{r}
+# different approach for Deming regression
+# See vignette here: https://cran.r-project.org/web/packages/deming/vignettes/deming.pdf
+deming(Nail~value, data = dat.long1[dat.long1$name.f=="Ferritin",])
+deming(value~Nail, data = dat.long1[dat.long1$name.f=="Ferritin",])
+
+dem.line = coef(deming(Nail~value, data = dat.long1[dat.long1$name.f=="Ferritin",]))
+dem.line
+dem.line2 = coef(deming(value~Nail, data = dat.long1[dat.long1$name.f=="Ferritin",]))
+dem.line2
+
+
+dem.line3 = coef(pbreg(value~Nail, data = dat.long1[dat.long1$name.f=="Ferritin",]))
+dem.line3
+
+dem.line4 = coef(pbreg(Nail~value, data = dat.long1[dat.long1$name.f=="Ferritin",]))
+(pbreg(Nail~value, data = dat.long1[dat.long1$name.f=="Ferritin",]))$ci[2,]
+dem.line4
+
+dem.line5 = coef(pbreg(value~Nail, data = dat.long1[dat.long1$name.f=="Ferritin",]))
+dem.line5
+
+reg.line = coef(lm(value~Nail, data=dat.long1[dat.long1$name.f=="Ferritin",]))
+reg.line2 = coef(lm(Nail~value, data=dat.long1[dat.long1$name.f=="Ferritin",]))
+coef(lm(Nail~1, data=dat.long1[dat.long1$name.f=="Ferritin",]))
+
+
+
+head(dat.long1)
+
+ggplot(data = dat.long1[dat.long1$name.f=="Ferritin",],
+       aes(x=value, y=Nail)) +
+  geom_point() + theme_bw() +
+  geom_abline(intercept = dem.line[1], slope = dem.line[2], color="red") +
+  geom_abline(intercept = dem.line4[1], slope = dem.line4[2], color="green") + 
+  geom_abline(intercept = reg.line2[1], slope = reg.line2[2], color="blue") +
+  geom_abline(intercept=0, slope=1, color="orange")
+
+summary(dat.long1[dat.long1$name.f=="Ferritin",]$value)
+
+ggplot(data = dat.long1[dat.long1$name.f=="Ferritin" & dat.long1$value<450,],
+       aes(x=Nail, y=value)) +
+  geom_point() + theme_bw() +
+  geom_abline(intercept = dem.line2[1], slope = dem.line2[2], color="red") +
+  geom_abline(intercept = dem.line5[1], slope = dem.line5[2], color="green") +
+  geom_abline(intercept = reg.line[1], slope = reg.line[2], color="blue") +
+  geom_abline(intercept=0, slope=1, color="orange")
+
+
+
+# function to get the PB regression regression parameters
+
+pbreg.f = function(df){
+
+    coefs = coef(pbreg(log(Nail) ~  log(value), data=df))
+    coefs.lm = coef(lm(log(Nail)~log(value), data=df))
+    coefs.int = coef(lm(log(Nail)~1, data=df))
+    
+    lci = (pbreg(log(Nail)~log(value), data=df))$ci[2,1] 
+    uci = (pbreg(log(Nail)~log(value), data=df))$ci[2,2]
+    
+    return(c(int=coefs[1] , slp=coefs[2], int.ols=coefs.lm[1], slp.ols=coefs.lm[2],
+             int.int=coefs.int[1], slp.lci = lci, slp.uci=uci))
+    
+}
+
+pbreg(log(Nail)~log(value), data=dat.long3[dat.long3$name.f == "Transferrin Saturation",])
+
+#  Get estimates by each of the four iron outcomes, fe, fertn, fesat
+pb.ests <- dlply(dat.long3[!(dat.long3$name.f %in% c("PC1")),], "name.f", pbreg.f)
+
+# return a data frame from list above
+est.df = ldply(pb.ests)
+est.df
+names(est.df) = c("name.f", "int.pb", "slp.pb", "int.ols", "slp.ols", "int.int", "slp.lci", "slp.uci")
+
+
+# Source: https://stackoverflow.com/questions/57153428/r-plot-color-combinations-that-are-colorblind-accessible
+cbb  <- c("#000000", "#E69F00", "#56B4E9", "#009E73", 
+                       "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+pie(rep(1, 8), col = cbb)
+
+```
+
+
+
+```{r, eval=F, include=F}
+# Look at prediction intervals for one outcome
+
+#create simple linear regression model
+table(dat.long3$name.f)
+summary(dat.long3$value)
+
+# PC1 
+dat.pc =  dat.long3[which(dat.long3$name.f=="PC1"),]
+model.pc1 <- lm(value ~ Nail, data = dat.pc)
+
+# Use model to create prediction intervals
+predictions <- predict(model.pc1, interval = "predict")
+
+dat.pcp = cbind(dat.pc, predictions)
+
+p1.pred = ggplot(dat.pcp, aes(Nail, value, colour=no.case)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=FALSE) +
+  labs(x="Toenail (mcg/g)", 
+       y="Serum (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw() +
+  xlim(0,50) +
+  theme(legend.position = "bottom") +
+  labs(caption = "Note: Green line is OLS fit and blue line is Deming regression") +
+  geom_line(aes(y = lwr), col = "coral2", linetype = "dashed") + #lwr pred interval
+  geom_line(aes(y = upr), col = "coral2", linetype = "dashed") + #upr pred interval
+  facet_wrap(.~name.f, scales = "free", nrow=4)
+
+p1.pred
+
+```
+
+```{r,fig.width=8, fig.height=10}
+# now loop through all 4 values with a function to get plots with prediction intervals
+
+# function to get data set with prediction intervals
+get.pred <- function(df){
+  model1 <- lm(value ~ Nail, data = df)
+  # Use model to create prediction intervals
+  predictions <- predict(model1, interval = "predict")
+  dat.p = cbind(df, predictions)
+  return(dat.p)
+}
+
+table(dat.long3$name.f)
+
+# get prediction intervals by each of the four iron outcomes, fe, fertn, fesat and PC1
+preds <- dlply(dat.long3, "name.f", get.pred)
+
+# return a data frame
+pred.df = ldply(preds)
+#head(pred.df); dim(pred.df); dim(dat.long3)
+
+# Plot prediction intervals with a linear regression line
+p1.pred = ggplot(pred.df, aes(Nail, value, colour=no.case)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=T) +
+  labs(x="Toenail (mcg/g)", 
+       y="Serum (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw() +
+  facet_wrap(.~name.f, scales = "free", nrow=4) +
+#  xlim(0,50) +
+  theme(legend.position = "bottom") +
+  labs(caption = "Note: Green line is OLS fit and red dashed lines are prediction intervals") +
+  geom_line(aes(y = lwr), col = "coral2", linetype = "dashed") + #lwr pred interval
+  geom_line(aes(y = upr), col = "coral2", linetype = "dashed") #upr pred interval
+
+p1.pred
+
+
+```
+
+
+```{r}
+
+# get prediction intervals by each of the four iron outcomes, fe, fertn, fesat and PC1
+preds <- dlply(dat.long3[!(dat.long3$name.f %in% c("PC1")),], "name.f", get.pred)
+
+# return a data frame
+pred.df = ldply(preds)
+#head(pred.df); dim(pred.df); dim(dat.long3)
+
+# Plot prediction intervals with a linear regression line
+p1.pred.out = ggplot(pred.df, aes(Nail, value, colour=no.case)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=T) +
+  labs(x="Toenail (mcg/g)", 
+       y="Serum (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw() +
+  facet_wrap(.~name.f, scales = "free", nrow=1) +
+#  xlim(0,50) +
+  theme(legend.position = "bottom") +
+  #labs(caption = "Note: Green line is OLS fit and red dashed lines are prediction intervals") +
+  geom_line(aes(y = lwr), col = "coral2", linetype = "dashed") + #lwr pred interval
+  geom_line(aes(y = upr), col = "coral2", linetype = "dashed") #upr pred interval
+
+p1.pred.out
+```
+
+```{r}
+
+
+ggsave(file="predict-poster.png", width = 10, height = 3, device='png', dpi=700)
+
+```
+
+
+
+```{r, results='markup'}
+kable(model.info2, booktabs=T)
+
+```
+
+\clearpage
+\newpage
+
+
+```{r, results='hide'}
+# get Spearman with CI
+
+# source: https://content.csbs.utah.edu/~rogers/datanal/labprj/bootstrap/index.html
+
+ferritin = sub.dat[, c("UMN_Iron_Baseline_FERTN", "DC_Baseline_Toenail_Fe")]
+fe = sub.dat[, c("UMN_Iron_Baseline_FE", "DC_Baseline_Toenail_Fe")]
+fesat = sub.dat[, c("UMN_Iron_Baseline_FESAT", "DC_Baseline_Toenail_Fe")]
+
+dim(ferritin)
+dim(fe)
+dim(fesat)
+
+# Spearman's correlation from observed data
+
+# function to get correlation
+getcor <- function(x, ndx) {
+  dat1.cor = cor(x[ndx,1], x[ndx,2], method="spearman", use="complete.obs")
+    return(dat1.cor)
+}
+
+# check
+cor(fe, use="complete.obs")
+getcor(ferritin)
+
+# bootstrap spearman correlation for two time points
+fe.boot <- boot(fe, getcor, R=1000, stype="i")
+ferritin.boot <- boot(ferritin, getcor, R=1000, stype="i")
+fesat.boot <- boot(fesat, getcor, R=1000, stype="i")
+
+
+# function to get means and se
+get.dat = function(dat, serum){
+  
+
+  mean = mean(dat$t)
+  se = sd(dat$t); se # get sd of sampling dist = se
+  
+  uci = mean + 1.96*se; uci
+  lci = mean - 1.96*se ; lci
+  
+  return(data.frame(serum=serum,
+                    mean.serum=mean(dat$t), 
+                    se.serum = sd(dat$t),
+                    uci=uci, lci=lci))
+}
+
+dat.summary = rbind.data.frame( get.dat(fe.boot, "fe"),
+                                get.dat(ferritin.boot, "ferritin"),
+                                get.dat(fesat.boot, "transferrin saturation") )
+dat.summary
+```
+
+```{r}
+
+dat.summary = within(dat.summary, {
+  name.f = ifelse(serum=="fe", "Iron",
+                  ifelse(serum=="ferritin", "Ferritin",
+                         ifelse(serum=="transferrin saturation", "Transferrin Saturation", NA)))
+  x = log(c(exp(3.75), exp(4.8), exp(2.5)))
+  y = log(rep(200-75,3))
+  no.case = NA
+  text = paste0("Spearman coef =\n",
+                formatC(round(mean.serum, 2), format="f", digits=2),
+                " (",
+                round(lci, 2),
+                ",",
+                formatC(round(uci,2), format="f", digits=2), ")")
+})
+
+dat.summary
+
+```
+
+
+```{r}
+
+table(pred.df$no.case)
+table(pred.df$name.f)
+iron_names <- c(
+                    `Iron` = "Iron (mcg/dL)",
+                    `Ferritin` = "Ferritin (mcg/dL)",
+                    `Transferrin Saturation` = "Transferrin Saturation (%)"
+                    )
+
+est.df # slopes to superimpose on plot below
+
+# fix reversed ci for tf sat
+est.df$lci2 = with(est.df, ifelse(name.f=="Transferrin Saturation", slp.uci, slp.lci))
+est.df$uci2 = with(est.df, ifelse(name.f=="Transferrin Saturation", slp.lci, slp.uci))
+
+est.df$text = with(est.df, paste0("slope = ", round(slp.pb, 2), " (", round(lci2, 2),
+                                  ", ", round(uci2, 2), ")"))
+est.df$x = log(c(exp(3.75), exp(5), exp(2.5)))
+est.df$y = log(rep(200,3))
+est.df
+est.df$no.case=NA
+
+# Plot pb regression lines with points
+pb.fig = ggplot(pred.df, aes(y=log(Nail), x=log(value))) + 
+  geom_point(size=3, alpha=0.25) + 
+  labs(y="log(Toenail (mcg/g))", 
+       x="log(Serum measure)") +
+  theme_bw(base_size=20) +
+  facet_wrap(.~name.f, scales = "free", nrow=1, labeller = as_labeller(iron_names)) +
+#  xlim(0,50) +
+  theme(legend.position = "bottom") +
+  geom_abline(data=est.df, aes(intercept=int.pb, slope=slp.pb, colour="Passing-Bablock"), lwd=1.5) +
+  geom_abline(data=est.df, aes(intercept=int.ols, slope=slp.ols, colour="OLS"), lwd=1.5)  +
+  geom_abline(data=est.df, aes(intercept=int.int, slope=0, colour="Average"), lwd=1.5) +
+  geom_text(data=est.df, aes(x=x, y=y, label=text), size=5, color=cbb[3]) +
+  geom_text(data=dat.summary, aes(x=x, y=y, label=text), size=5, color=cbb[6]) +
+#  geom_abline(aes(intercept=0, slope=1, colour="Unity"), lwd=1.5) +
+  scale_colour_manual("Regression method", 
+                         values = c("Passing-Bablock" = cbb[3],
+                                    "OLS" = cbb[4], 
+                                    "Average" = cbb[5])) #+#,
+                                    #"Unity" = cbb[7]))    +
+#  scale_shape_manual("Case", values=c(21,19))
+  
+pb.fig
+
+```
+
+
+```{r}
+
+ggsave(file="pb-poster.png", width = 15, height = 6, device='png', dpi=700)
+
+```
+
+
+<!-- re-do of poster after co-authors requests. -->
+
+
+```{r}
+
+table(pred.df$no.case)
+table(pred.df$name.f)
+iron_names <- c(
+                    `Iron` = "Iron (mcg/dL)",
+                    `Ferritin` = "Ferritin (mcg/dL)",
+                    `Transferrin Saturation` = "Transferrin Saturation (%)"
+                    )
+
+est.df # slopes to superimpose on plot below
+
+# fix reversed ci for tf sat
+est.df$lci2 = with(est.df, ifelse(name.f=="Transferrin Saturation", slp.uci, slp.lci))
+est.df$uci2 = with(est.df, ifelse(name.f=="Transferrin Saturation", slp.lci, slp.uci))
+
+est.df$text = with(est.df, paste0("slope = ", round(slp.pb, 2), " (", round(lci2, 2),
+                                  ", ", round(uci2, 2), ")"))
+est.df$x = log(c(exp(3.75), exp(5), exp(2.5)))
+est.df$y = log(rep(200,3))
+est.df
+est.df$no.case=NA
+
+# Plot pb regression lines with points
+
+pb.fig2 = ggplot(pred.df, aes(y=log(Nail), x=log(value))) + 
+  geom_hex() +
+  scale_fill_gradient(low="lightblue1",high="darkblue") +
+  #  geom_point(size=3, alpha=0.25) + 
+  labs(y="log(Toenail (mcg/g))", 
+       x="log(Serum measure)") +
+  theme_bw(base_size=30) +
+  facet_wrap( . ~ name.f, scales = "free", nrow=1, labeller = as_labeller(iron_names)) +
+#  xlim(0,50) +
+  theme(legend.position = "right") +
+#  geom_abline(data=est.df, aes(intercept=int.pb, slope=slp.pb, colour="Passing-Bablock"), lwd=1.5) +
+#  geom_abline(data=est.df, aes(intercept=int.ols, slope=slp.ols, colour="OLS"), lwd=1.5)  +
+#  geom_abline(data=est.df, aes(intercept=int.int, slope=0, colour="Average"), lwd=1.5) +
+#  geom_text(data=est.df, aes(x=x, y=y, label=text), size=5, color=cbb[3]) +
+  geom_text(data=dat.summary, aes(x=x, y=y, label=text), size=7, color="black") 
+#  geom_abline(aes(intercept=0, slope=1, colour="Unity"), lwd=1.5) +
+#  scale_shape_manual("Case", values=c(21,19))
+  
+pb.fig2
+
+```
+
+
+```{r}
+
+ggsave(file="pb-poster2.png", width = 16, height = 6, device='png', dpi=700)
+
+```
+
+
+## Time 2
+
+
+```{r}
+# Make long style data frame for 4 panel plot
+
+dat.long.t2. <- 
+  sub.dat %>% 
+  dplyr::select(c(UMN_Iron_SCL_FE, UMN_Iron_SCL_FERTN, UMN_Iron_SCL_FESAT, PC1.scl,
+                  subcohort.nocases,
+                  PSID)) %>% 
+  pivot_longer(cols = -c("PSID", 'subcohort.nocases'),
+               values_drop_na=T)
+
+
+dat.long.t2 = merge(dat.long.t2., sub.dat[complete.cases(sub.dat$DC_Baseline_Toenail_Fe),
+                                                   c("PSID", "DC_Baseline_Toenail_Fe")], 
+                 by="PSID")
+
+levels(factor(dat.long.t2$name))
+
+dat.long.t2 = within(dat.long.t2, {
+  no.case = factor(subcohort.nocases,
+                   labels=c("No", "Yes"))
+  name.f = factor(name, labels=c("PC1", "Iron", "Ferritin", "Transferrin Saturation"))
+})
+
+colnames(dat.long.t2)[which(colnames(dat.long.t2) %in% "DC_Baseline_Toenail_Fe")]="Nail"
+
+head(dat.long.t2)
+dim(dat.long.t2)
+length(unique(dat.long.t2$PSID))
+summary(dat.long.t2)
+```
+
+
+### Untransformed with outlier
+
+```{r}
+
+# Source: https://stackoverflow.com/questions/1169539/linear-regression-and-group-by-in-r
+# Break up data frame by iron measure, then fit the specified model to each piece and
+# return a list
+models.t2 <- dlply(dat.long.t2, "name.f", deming.r)
+# return a data frame
+model.info.t2=ldply(models.t2); model.info.t2
+
+#merge line info onto plot data
+dat.long.t2.1 = merge(dat.long.t2, model.info.t2, by="name.f")
+head(dat.long.t2.1)
+
+ggplot(dat.long.t2.1, aes(Nail, value, colour=no.case)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=FALSE) +
+  facet_wrap(.~name.f)+
+  geom_abline(aes(slope=slp, intercept=int.y), color="blue") +
+  labs(x="Toenail (mcg/g)", 
+       y="Serum (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw()
+
+```
+
+
+### Untransformed without outlier
+
+#### Information on outlier
+
+```{r}
+  
+extreme.id = sub.dat[which(sub.dat$DC_Baseline_Toenail_Fe==max(sub.dat$DC_Baseline_Toenail_Fe, na.rm=T)),]$PSID
+
+extreme.id
+sub.dat[sub.dat$PSID %in% c(extreme.id),]$DC_Baseline_Toenail_Fe
+
+```
+
+#### Plot
+
+```{r}
+
+#dim(sub.dat)
+dat.long.t2.1 = dat.long.t2.1[!(dat.long.t2.1$PSID %in% extreme.id),]
+#dim(sub.dat1)
+
+# get Deming regression info
+models.t2.1 <- dlply(dat.long.t2.1, "name.f", deming.r)
+# return a data frame
+model.info.t2.1=ldply(models.t2.1); model.info.t2.1
+names(model.info.t2.1) = c("name.f", "int.1", "slp.1")
+#merge line info onto plot data
+dat.long.t2.2 = merge(dat.long.t2.1, model.info.t2.1, by="name.f")
+head(dat.long.t2.2)
+
+
+ggplot(dat.long.t2.2, aes(Nail, value, colour=no.case)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=FALSE) +
+  facet_wrap(.~name.f)+
+  geom_abline(aes(slope=slp.1, intercept=int.1), color="blue") +
+  labs(x="Toenail (mcg/g)", 
+       y="Serum (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw()
+
+```
+
+
+### log transformed without outlier
+
+```{r}
+
+# get Deming regression info
+models.t2.2 <- dlply(dat.long.t2.1, "name.f", deming.r.log)
+# return a data frame
+model.info.t2.2=ldply(models.t2.2); model.info.t2.2
+names(model.info.t2.2) = c("name.f", "int.2", "slp.2", "int.ols", "slp.ols")
+#merge line info onto plot data
+dat.long.t2.3 = merge(dat.long.t2.2, model.info.t2.2, by="name.f")
+head(dat.long.t2.3)
+
+
+p2 = ggplot(dat.long.t2.3, aes(log(Nail), log(value), colour=no.case)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=FALSE) +
+  facet_wrap(.~name.f, ncol=4, scale="free")+
+  geom_abline(aes(slope=slp.2, intercept=int.2), color="blue") +
+  # geom_text(aes(4, 2.5, label = paste(#"Adj R2 = ", adj.r.squared, "\n",
+  #                                  "Deming regression \n",
+  #                                  "Intercept =", round(int.2,2), "\n",
+  #                                  "Slope =", round(slp.2,2), "\n"#,
+  #                                  #"P =", pvalue
+  #                                  )), color="blue") +
+  # geom_text(aes(4, 5.5, label = paste(#"Adj R2 = ", adj.r.squared, "\n",
+  #                                  "OLS regression \n",
+  #                                  "Intercept =", round(int.ols,2), "\n",
+  #                                  "Slope =", round(slp.ols,2), "\n"#,
+  #                                  #"P =", pvalue
+  #                                  )), color="green") +
+    labs(caption = "Note: Green line is OLS fit and blue line is Deming regression",
+         x="Toenail (mcg/g)", 
+         y="Serum (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw() +
+  theme(legend.position = "bottom") 
+
+p2
+```
+
+
+```{r,fig.width=6, fig.height=10}
+
+# Now loop through all 4 values with a function to get plots with prediction intervals
+
+# function to get data set with prediction intervals
+get.pred <- function(df){
+  model1 <- lm(value ~ Nail, data = df)
+  # Use model to create prediction intervals
+  predictions <- predict(model1, interval = "predict")
+  dat.p = cbind(df, predictions)
+  return(dat.p)
+}
+
+# get prediction intervals by each of the four iron outcomes, fe, fertn, fesat and PC1
+preds2 <- dlply(dat.long.t2.3, "name.f", get.pred)
+
+# return a data frame
+pred.df2 = ldply(preds2)
+#head(pred.df); dim(pred.df); dim(dat.long3)
+
+# Plot prediction intervals with a linear regression line
+p2.pred = ggplot(pred.df2, aes(Nail, value, colour=no.case)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=T) +
+  labs(x="Toenail (mcg/g)", 
+       y="Serum (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw() +
+  facet_wrap(.~name.f, scales = "free", nrow=4) +
+#  xlim(0,50) +
+  theme(legend.position = "bottom") +
+  labs(caption = "Note: Green line is OLS fit and red dashed lines are prediction intervals") +
+  geom_line(aes(y = lwr), col = "coral2", linetype = "dashed") + #lwr pred interval
+  geom_line(aes(y = upr), col = "coral2", linetype = "dashed") #upr pred interval
+
+p2.pred
+
+```
+
+
+```{r}
+
+save(p1, p1.pred, p2, p2.pred, model.info.t2.2,  model.info2, pb.fig2, scatter1, scatter2,
+     file="section2-plots.RData")
+
+```
+
+```{r, results='markup'}
+
+kable(model.info.t2.2, booktabs=T)
+
+```
+

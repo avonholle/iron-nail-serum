@@ -1,0 +1,210 @@
+---
+title: "Section 3: Spearman’s rank correlation coefficient, RTI data"
+output:
+  pdf_document:
+    number_sections: yes
+    toc: no
+    highlight: tango
+  html_document:
+    theme: united
+    toc: no
+editor_options:
+  chunk_output_type: console
+header-includes:
+ \usepackage{float}
+---
+
+
+
+```{r, include=FALSE}
+
+knitr::opts_chunk$set(echo = F, 
+                      results = 'markup',
+                      warning = F,
+                      fig.pos = 'H',
+                      results="hide")
+
+#runif(1, 0, 10^8)
+set.seed(74268794)
+
+```
+
+
+```{r, include=F}
+# bring in packages
+require(knitr)
+require(haven)
+require(data.table)
+require(ggplot2)
+require(kableExtra)
+library(dplyr)
+library(tidyr)
+library(plyr)
+
+```
+
+
+```{r}
+
+load(file="../sections/updated-data-iron.RData") # sub.dat is subset, all.dat is total data
+
+nail.names2
+iron.names2
+serum.names2
+
+
+# NOTE: have to run section5-spearman.Rmd first 
+load(file="pca-info.RData") # pca.log, loading.matrix, pc.info
+
+dim(sub.dat)
+sub.dat = merge(sub.dat, pc.info, by="PSID", all.x=T)
+dim(sub.dat)
+#summary(sub.dat[c("PC1", "PC1.scl")])
+
+sub.dat.cc = sub.dat[complete.cases(sub.dat[,c("UMN_Iron_Baseline_FE", "RTI_Toenail_fe_Adj")]),]
+head(sub.dat.cc)
+dim(sub.dat.cc)
+
+x = sub.dat$UMN_Iron_Baseline_FERTN
+y = sub.dat$RTI_Toenail_fe_Adj
+cor.test(x,y,
+         method="spearman")
+
+```
+
+
+
+# Spearman’s rank correlation coefficient # {#spearman}
+
+## Baseline
+
+
+```{r}
+
+load(file="RTI-dat.RData") # all.dat2 from section2-RTI.Rmd
+
+# Make long style data frame 
+
+dat.long. <- 
+  all.dat2 %>% 
+  dplyr::select(c(UMN_Iron_Baseline_FE, UMN_Iron_Baseline_FERTN, UMN_Iron_Baseline_FESAT,# PC1,
+                  subcohort.nocases,
+                  PSID)) %>% 
+  pivot_longer(cols = -c("PSID", 'subcohort.nocases'),
+               values_drop_na=T)
+dim(dat.long.)
+
+dat.long. = within(dat.long., {
+  no.case = factor(subcohort.nocases,
+                   labels=c("No", "Yes"))
+  name.f = factor(name, labels=c("Iron", "Ferritin", "Transferrin Saturation"))
+})
+
+
+dat.long = merge(dat.long., all.dat2[complete.cases(all.dat2$RTI_Toenail_fe_Adj),
+                                                   c("PSID", "RTI_Toenail_fe_Adj")], 
+                 by="PSID",
+                 all.y=T)
+
+levels(factor(dat.long$name))
+
+colnames(dat.long)[which(colnames(dat.long) %in% "RTI_Toenail_fe_Adj")]="Nail"
+
+head(dat.long)
+dim(dat.long)
+
+head(dat.long)
+
+
+```
+
+
+### Spearman's rank correlation at baseline with outlier
+
+
+```{r, results="markup"}
+
+spearman.f = function(df){
+  x=df$Nail
+  y=df$value
+  corr1 <- cor.test(x, y, method = 'spearman')
+  return(c(corr1$estimate, corr1$p.value))
+}
+
+# Source: https://stackoverflow.com/questions/1169539/linear-regression-and-group-by-in-r
+# Break up data frame by iron measure, then fit the specified model to each piece and
+# return a list
+sp.dat <- dlply(dat.long, "name.f", spearman.f)
+# return a data frame
+sp.dat.df = ldply(sp.dat)
+
+names(sp.dat.df)=c("Serum measure", "rho", "p-value")
+sp.dat.df
+
+```
+
+
+### Spearman's rank correlation at baseline without outlier
+
+#### Outlier information
+
+```{r, results="markup"}
+
+extreme.id = all.dat2[which(all.dat2$RTI_Toenail_fe_Adj > quantile(all.dat2$RTI_Toenail_fe_Adj, 0.999, na.rm=T)),]$PSID # remove people with extreme fe values 
+extreme.id
+
+all.dat2[all.dat2$PSID %in% c(extreme.id),]$RTI_Toenail_fe_Adj
+
+```
+
+#### Spearman correlation statistic
+
+```{r, results="markup"}
+
+dat.long1 = dat.long[!(dat.long$PSID %in% extreme.id),]
+
+# Source: https://stackoverflow.com/questions/1169539/linear-regression-and-group-by-in-r
+# Break up data frame by iron measure, then fit the specified model to each piece and
+# return a list
+sp.dat1 <- dlply(dat.long1, "name.f", spearman.f)
+# return a data frame
+sp.dat1.df = ldply(sp.dat1)
+names(sp.dat1.df)=c("Serum measure", "rho", "p-value")
+
+sp.dat1.df
+
+```
+
+### Spearman correlation between the RTI and Dartmouth toenail values
+
+```{r, results="markup"}
+
+sub.dat.both = all.dat2[!(is.na(sub.dat$DC_Baseline_Toenail_Fe)) & !(is.na(all.dat2$RTI_Toenail_fe_Adj)),]
+dim(sub.dat.both) # 166
+
+cor.bothnail = cor.test(sub.dat.both$DC_Baseline_Toenail_Fe, sub.dat.both$RTI_Toenail_fe_Adj)
+cor.bothnail 
+
+```
+
+
+```{r}
+# 65 people have both DC and RTI at baseline
+
+p.dc.rti = ggplot(data=sub.dat.both,
+       aes(x=DC_Baseline_Toenail_Fe, y=RTI_Toenail_fe_Adj)) +
+  geom_point() +
+  theme_bw() +
+  geom_abline(intercept=0, slope=1, colour='red')
+
+p.dc.rti
+
+```
+
+
+```{r, results="markup"}
+
+save(sp.dat1.df,  cor.bothnail, p.dc.rti, file="section3-RTI-dat.RData")
+
+```
+

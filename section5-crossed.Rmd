@@ -1,0 +1,1202 @@
+---
+title: "Section 5: Comparison of iron measures change over two time points for people with both nail and serum values."
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+    highlight: tango
+  html_document:
+    theme: united
+    toc: no
+float: F
+editor_options:
+  chunk_output_type: console
+bibliography: ../iron.bib
+header-includes:
+ \usepackage{float}
+---
+
+# Comparison of iron measures change over two time points for people with both nail and serum values. # {#section5-crossed}
+
+
+```{r setup5, include=FALSE}
+knitr::opts_chunk$set(echo = F, 
+                      results = 'hide',
+                      warning = F,
+                      message=F,
+                      fig.pos = 'H',
+                      fig.align="center",
+                      float=F)
+
+#runif(1, 0, 10^8)
+set.seed(74268794)
+
+```
+
+
+```{r, include=F}
+# bring in packages
+# NOTE: if trying to run all sections in bookdown there are problems with MASS taking away select option loaded in section4.Rmd from dplyr. Have to follow this tip: https://stackoverflow.com/questions/26189541/remove-detach-a-package-in-a-r-session
+require(knitr)
+require(haven)
+require(data.table)
+require(ggplot2)
+require(kableExtra)
+
+library(nlme)
+library(lme4)
+
+library(dplyr)
+library(tidyr)
+library(plyr)
+
+library(stringr)
+
+
+```
+
+
+```{r, results='hide', echo=F}
+
+# source: data-handling-cch.Rmd
+
+load(file="../sections/updated-data-iron.RData") # sub.dat is subset, all.dat is total data
+
+nail.names2
+iron.names2
+serum.names2
+
+dim(sub.dat)
+table(sub.dat$event)
+table(sub.dat$HZ_HR_MenopauseStatus)
+table(sub.dat$HR35)
+table(sub.dat$menop.age)
+
+with(sub.dat, table(HR34, HZ_HR_MenopauseStatus))
+
+head(sub.dat[which(sub.dat$HZ_HR_MenopauseStatus==6), c("PSID", "menop.status", "menop.age")])
+
+with(sub.dat[which(sub.dat$HZ_HR_MenopauseStatus==6),], summary(HZ_HR_MenopauseAge))
+with(sub.dat[which(sub.dat$HZ_HR_MenopauseStatus==6),], summary(menop.age))
+summary(sub.dat$menop.age)
+table(sub.dat$HZ_HR_Hyst)
+
+```
+
+
+```{r}
+# get ids for analysis subset
+
+# Source: frequencies.Rmd
+load(file="ids-include-basefu.RData") # baseline.all.id, fu.all.id, base.fu.all.id
+
+# fu.all.id = id of people with all serum and nail measures at follow-up 
+# baseline.all.id = id of people with all baseline serum and nail measures
+# base.fu.all.id =  id of people with all baseline serum and nail measures AND follow-up measures
+
+
+```
+
+
+### Information on outlier
+
+```{r, results='markup'}
+
+extreme.ids = sub.dat[which( sub.dat$DC_Baseline_Toenail_Fe == max(sub.dat$DC_Baseline_Toenail_Fe, na.rm=T) | sub.dat$DC_SCL_Toenail_Fe == max(sub.dat$DC_SCL_Toenail_Fe, na.rm=T)),]$PSID
+
+#extreme.ids
+sub.dat = sub.dat[!(sub.dat$PSID %in% extreme.ids),]
+
+# Are there any extreme ids in subset with all nail and serum at baseline?
+
+#extreme.ids %in% base.fu.all.id # no, so no longer need to mention that as an exclusion criteria
+
+```
+
+
+```{r}
+# check on age at menopause for women reporting hysterectomies
+names(sub.dat)[grepl("meno", names(sub.dat))]
+names(all.dat)[grepl("meno", names(all.dat))]
+
+table(sub.dat$menop.status.f)
+table(sub.dat$HZ_HR_MenopauseStatus)
+table(sub.dat$HR34)
+
+with(sub.dat, summary(HR35-HZ_HR_MenopauseAge))
+with(sub.dat[sub.dat$HR34==1,], summary(HZ_HR_MenopauseAge))
+with(sub.dat[sub.dat$HR34==1,], summary(HR35))
+
+```
+
+```{r, results="hide"}
+
+# subset to ids with nail and serum values at baseline and follow-up
+sub.dat = sub.dat[sub.dat$PSID %in% base.fu.all.id,]
+length(unique(sub.dat$PSID))  # check
+## data handling
+
+
+table(sub.dat$HR34) # 10 of 86 have hysterectomies
+sub.dat[sub.dat$HR34==1, c("baseline.age", "menop.age", "HZ_HR_MenopauseAge",
+                           'HZ_HR_MenopauseSourceAgeExact', "HR35", 'nail.age', 'scl.nail.age')]
+sub.dat[, c("baseline.age", "menop.age", "HZ_HR_MenopauseAge", "HR35", 'nail.age', 'scl.nail.age')]
+
+table(sub.dat$menop.status)
+table(sub.dat$menop.age)
+table(round(sub.dat$baseline.age,0))
+
+summary(sub.dat[c("menop.status", "menop.age", "baseline.age", 'HZ_HR_MenopauseAge', 'HZ_HR_Menopause',
+                  'HZ_HR_MenopauseSourceAgeExact',
+                  "serum.age", 'scl.serum.age', 'nail.age', 'scl.nail.age')])
+
+with(sub.dat, summary(round(serum.age,0) - round(nail.age,0))) # nail and serum baseline age (t1) similar
+with(sub.dat, summary(round(scl.serum.age,0) - round(scl.nail.age,0))) # nail and serum draw age at scl collection (t2) similar
+
+# with(sub.dat, hist(round(serum.age,0) - round(HZ_HR_MenopauseSourceAgeExact,0))) # nail and serum baseline age (t1) similar
+
+sub.dat = within(sub.dat, {
+  diff.serum = log(UMN_Iron_SCL_FE) - log(UMN_Iron_Baseline_FE)     # time 2 - time 1
+  diff.nail = log(DC_SCL_Toenail_Fe) - log(DC_Baseline_Toenail_Fe)  # time 2 - time 1
+  no.case = factor(subcohort.nocases, labels=c("No", "Yes"))
+  
+  # update HZ_HR_MenopauseAge to age at hysterectomy for this particular analysis (we are interested in cessation of bleeding, not necessarily menopause via loss of ovarian function)
+  hz.hr.menopause.age.update = ifelse(HR34==1, HR35,
+                                      ifelse(HZ_HR_Hyst ==1 &  !(is.na(HZ_HR_HystAge)) & !(is.na(HZ_HR_MenopauseAge)) & HZ_HR_MenopauseAge>HZ_HR_HystAge, HZ_HR_HystAge, 
+                                             ifelse(HZ_HR_Hyst==1 & HZ_HR_Menopause==0, HZ_HR_HystAge, # if no reported menopause but hysterectomy then use age at hyst
+                                                    ifelse( !(is.na(HZ_HR_MenopauseAgeExact)), HZ_HR_MenopauseAgeExact,
+                                                             HZ_HR_MenopauseAge)))) # if hysterectomy with harmonized variable, "CALC: HZ_HR_Hyst. Hysterectomy harmonized using baseline, BH, TH, LH and TT data",  then use that age at hyst if before age at menopause otherwise use default menopause age
+
+  menop.status.rev = ifelse(HR34==1 & hz.hr.menopause.age.update < ceiling(baseline.age),  1,
+                            menop.status)
+  
+  # create menopause status across two time points. premenop t1/t2: 1) yes/yes, 2) yes/no, 3) no/no
+  menop.status.scl = ifelse(menop.status==1, 1, # if postm at baseline then postm at scl measure
+                            ifelse( (!(is.na(hz.hr.menopause.age.update)) & hz.hr.menopause.age.update < scl.serum.age ), 1, # if postm and age at menopause record is lower than age at scl serum draw 
+                                   ifelse( HZ_HR_Menopause==0 & !(is.na(HZ_HR_MenopauseAgeExact)) & (HZ_HR_MenopauseAgeExact >= scl.serum.age), 0, #  premenopausal at age after scl blood draw
+                                           ifelse( !(is.na(hz.hr.menopause.age.update)) & hz.hr.menopause.age.update > scl.serum.age, 0, # if menopause age after draw then premenopause at draw
+                                                   ifelse(!(is.na(HZ_HR_HystAge)) & HZ_HR_HystAge < scl.serum.age, 1, # if no menopause age but hyst before draw then post at draw
+                                                          ifelse(HZ_HR_Menopause==0 & HZ_HR_MenopauseSourceAgeExact> scl.serum.age, 0,  # if premenopause after draw then pre,
+                                                                 ifelse( HZ_HR_Menopause==1 & HZ_HR_MenopauseSourceAgeExact<scl.serum.age, 1, NA) )))))) # if age at report of menopause is past draw age and post then label as post -- after detecting all the hyst; otherwise missing
+
+  # also need to fix the pre-pre group. For the 
+  premenop.t1.t2 = as.factor(ifelse(menop.status.rev==0 & menop.status.scl==0, "pre/pre",
+                                    ifelse(menop.status.rev==0 & menop.status.scl==1, "pre/post",
+                                             ifelse(menop.status.rev==1 & menop.status.scl==1, "post/post", NA))))
+  })
+
+```
+
+```{r}
+
+# Check the revised age at menopause
+dim(sub.dat)
+
+# people missing pre/post menopause status
+sub.dat[is.na(sub.dat$premenop.t1.t2)==T, c("PSID", "premenop.t1.t2", "menop.status", "menop.status.scl", 'HZ_HR_Menopause',"HZ_HR_MenopauseSourceAgeExact", 
+           "baseline.age", "scl.serum.age", 'HZ_HR_HystAge', 'HZ_HR_Hyst',
+          "hz.hr.menopause.age.update", "HZ_HR_MenopauseAge",
+          "HR34", "HR35")]
+
+# people who have hysterectomies
+sub.dat[(sub.dat$HR34==1 | sub.dat$HZ_HR_Hyst==1), c("PSID", "premenop.t1.t2", "baseline.age", "scl.serum.age", 
+                                                     "menop.status", "menop.status.scl", 'HZ_HR_Menopause',  "HZ_HR_MenopauseAge",'HZ_HR_HystAge',
+          "HR34", "HR35",
+          "hz.hr.menopause.age.update", "HZ_HR_MenopauseSourceAgeExact", 'HZ_HR_Hyst',  'HZ_HR_MenopauseAgeExact', 'HZ_HR_HystAgeExact', 'HZ_HR_MenopauseAge')]
+
+# people pre/post menopause status
+sub.dat[which(sub.dat$premenop.t1.t2=="pre/post" & !(sub.dat$HR34==1 | sub.dat$HZ_HR_Hyst==1)),
+        c("PSID", "premenop.t1.t2", "menop.status", "menop.status.scl", 
+           "baseline.age", "HZ_HR_MenopauseAge", "HZ_HR_MenopauseAgeExact", "scl.serum.age", 'HZ_HR_Menopause',"HZ_HR_MenopauseSourceAgeExact", 
+          "hz.hr.menopause.age.update", 'HZ_HR_MenopauseStatus',
+          "HR34", "HR35")]
+
+
+# people pre/pre menopause status
+sub.dat[which(sub.dat$premenop.t1.t2=="pre/pre" & !(sub.dat$HR34==1 | sub.dat$HZ_HR_Hyst==1)),
+        c("PSID", "premenop.t1.t2", "menop.status", "menop.status.scl", 
+           "baseline.age", "HZ_HR_MenopauseAge", "HZ_HR_MenopauseAgeExact", "scl.serum.age", 'HZ_HR_Menopause',"HZ_HR_MenopauseSourceAgeExact", 
+          "hz.hr.menopause.age.update", 'HZ_HR_MenopauseStatus',
+          "HR34", "HR35")]
+
+```
+
+```{r, results="hide"}
+
+table(sub.dat$premenop.t1.t2, useNA = "always")
+with(sub.dat, table(menop.status.scl, is.na(scl.serum.age), useNA = "always"))
+miss.both.menop = sub.dat[is.na(sub.dat$menop.status.scl) & !(is.na(sub.dat$scl.serum.age)),]
+                          
+head(miss.both.menop[, c("menop.status", "menop.status.scl", "HZ_HR_Menopause",
+                                                "HZ_HR_MenopauseSourceAgeExact", "HZ_HR_MenopauseAge",
+                                                "scl.serum.age")]) # can't determine menopause status at time 2 because age at menopause not give (missing) and HZ_HR_MenopauseAge (age of recorded menopause is before scl serum draw) 
+dim(miss.both.menop)
+table(miss.both.menop$HZ_HR_MenopauseAge, useNA = "always") # confirm that age at menop missing for follow-up menopause measure.
+
+table(sub.dat$menop.status.scl)
+menop.yes = sub.dat[sub.dat$menop.status.scl==0,]
+table(round(menop.yes$scl.serum.age,0))
+head(menop.yes[,c("menop.status", "fu.meno.age", "FU_BCInvD_Menopause", "scl.serum.age", "premenop.t1.t2", "menop.status.scl")])
+
+
+head(menop.yes[which(menop.yes$scl.serum.age>60),
+               c("menop.status", "fu.meno.age", "FU_BCInvD_Menopause", 'FU_BCInvD_EOFAgeExact',
+                 'SCL_Serum_Draw_AgeExact', 'SCL_Serum_Draw_Age', "scl.serum.age", "premenop.t1.t2", "menop.status.scl")])
+
+
+sub.dat$premenop.t1.t2 = relevel(sub.dat$premenop.t1.t2, ref="pre/pre")
+
+# checks
+levels(sub.dat$premenop.t1.t2)
+with(sub.dat, table(menop.status.scl, menop.status))
+with(sub.dat, table(menop.status, fu.meno.age))
+with(sub.dat, table(menop.status, menop.status.scl, premenop.t1.t2))
+
+summary(sub.dat[c("diff.serum", "diff.nail")])
+
+dim(sub.dat)
+```
+
+```{r}
+# correlation of the fe repeated measures
+cc.dat = sub.dat[complete.cases(sub.dat[,c("diff.nail", "diff.serum"),]),]
+dim(cc.dat)
+cor( cc.dat$diff.serum, cc.dat$diff.nail, method="spearman")
+
+```
+
+
+```{r}
+
+# Now loop through all 4 values with a function to Spearman correlation values of the log(value_time2-value_time1) for nail/serum value
+extreme.ids
+
+data.time <- 
+  sub.dat[!(sub.dat$PSID %in% extreme.ids),] %>% 
+  dplyr::select(c(serum.age, scl.serum.age, nail.age, scl.nail.age, PSID, menop.status.f, no.case, premenop.t1.t2)) %>%   pivot_longer(cols = -c("PSID", "menop.status.f", "no.case", 'premenop.t1.t2'),
+               values_drop_na=T) 
+
+
+# Make long style data frame for 3 panel plot
+
+# Time 1 ============================================
+dat.long.t1. <- 
+  sub.dat %>% 
+  dplyr::select(c(UMN_Iron_Baseline_FE, UMN_Iron_Baseline_FERTN, UMN_Iron_Baseline_FESAT, 
+                  subcohort.nocases, serum.age, no.case, premenop.t1.t2,
+                  PSID)) %>% 
+  pivot_longer(cols = -c("PSID", 'subcohort.nocases', 'serum.age', "no.case", "premenop.t1.t2"),
+               values_drop_na=T)
+
+dat.long.t1 = merge(dat.long.t1., sub.dat[complete.cases(sub.dat$DC_Baseline_Toenail_Fe),
+                                          c("PSID", "DC_Baseline_Toenail_Fe", "nail.age")], 
+                 by="PSID")
+head(dat.long.t1)
+names(dat.long.t1)
+
+names(dat.long.t1) = c("PSID", "subcohort.nocases", "serum.age", "no.case", "premenop.t1.t2", "serum", 
+                       "value_t1", "nail_t1", "nail.age")
+head(dat.long.t1)
+
+# get fourth value of string indicating type of serum
+# source: https://stackoverflow.com/questions/49752900/strsplit-and-keep-part-before-first-underscore
+dat.long.t1$serum.val = sapply(str_split(dat.long.t1$serum, "_",  n = 4), `[`, 4)
+head(dat.long.t1$serum.val)
+
+
+# Time 2 ============================================
+dat.long.t2. <- 
+  sub.dat %>% 
+  dplyr::select(c(UMN_Iron_SCL_FE, UMN_Iron_SCL_FERTN, UMN_Iron_SCL_FESAT,
+                  subcohort.nocases, scl.serum.age,no.case, premenop.t1.t2,
+                  PSID)) %>% 
+  pivot_longer(cols = -c("PSID", 'subcohort.nocases', 'scl.serum.age', 'no.case', 'premenop.t1.t2'),
+               values_drop_na=T)
+
+dat.long.t2 = merge(dat.long.t2., sub.dat[complete.cases(sub.dat$DC_SCL_Toenail_Fe),
+                                       c("PSID", "DC_SCL_Toenail_Fe", 'scl.nail.age')], 
+                 by="PSID")
+
+names(dat.long.t2) = c("PSID", "subcohort.nocases", 'scl.serum.age', 'no.case', 'premenopa.t1.t2', 
+                       "serum", "value_t2", "nail_t2", "scl.nail.age")
+dim(dat.long.t2)
+head(dat.long.t2)
+
+# get fourth value of string indicating type of serum
+# source: https://stackoverflow.com/questions/49752900/strsplit-and-keep-part-before-first-underscore
+dat.long.t2$serum.val = sapply(str_split(dat.long.t2$serum, "_",  n = 4), `[`, 4)
+
+head(dat.long.t2$serum.val)
+
+# merge time1 and time2
+dat.long = merge(dat.long.t1, dat.long.t2, by=c("PSID", "serum.val"))
+head(dat.long)
+
+# Get differences across time points for serum and nail measures ================
+dat.long = within(dat.long, {
+  diff.serum = log(value_t2) - log(value_t1)
+  diff.nail = log(nail_t2) - log(nail_t1)
+})
+
+```
+
+
+```{r}
+
+# create subset of serum iron diffs for serum-serum comparisons
+table(dat.long$serum.val)
+dat.long.iron = dat.long[which(dat.long$serum.val=="FE"), 
+                         c("PSID", "diff.serum", "serum.val")]
+table(dat.long.iron$serum.val)
+names(dat.long.iron)[2] = "diff.serum2" 
+
+# create subset of ferritin diffs
+dat.long.ferritin = dat.long[which(dat.long$serum.val=="FERTN"),
+                             c("PSID", "diff.serum", "serum.val")]
+head(dat.long.ferritin)
+names(dat.long.ferritin)[2] = "diff.serum2" 
+
+# create subset of transferrin saturation diffs
+dat.long.tf = dat.long[which(dat.long$serum.val=="FESAT"),
+                             c("PSID", "diff.serum", "serum.val")]
+head(dat.long.tf)
+names(dat.long.tf)[2] = "diff.serum2" 
+
+# append all three serum vals to one df
+serum3 = rbind.data.frame(dat.long.iron, 
+                          dat.long.ferritin,
+                          dat.long.tf)
+summary(serum3)
+head(serum3)
+
+# now merge with original serum val diffs to make comparisons
+serum3.merge = merge(dat.long[c("PSID", "diff.serum", "serum.val")],
+                     serum3, 
+                     by="PSID", all.x=T)
+dim(serum3.merge)
+head(serum3.merge)
+names(dat.long)
+
+```
+
+
+```{r}
+
+# function to get Spearmean correlation between differences for nail and serum
+get.cor <- function(df){
+  cor(df$diff.serum, df$diff.nail, method="spearman")
+}
+
+# get cor info by each serum val
+cor.1 <- dlply(dat.long, "serum.val", get.cor)
+
+# return a data frame
+cor.1.info = ldply(cor.1)
+head(cor.1.info)
+names(cor.1.info) = c("Measure", "correlation")
+cor.1.info
+```
+
+
+```{r}
+
+# function to get Spearmean correlation between differences for serum vs serum
+get.cor2 <- function(df){
+  cor(df$diff.serum, df$diff.serum2, method="spearman")
+}
+
+head(serum3.merge)
+#[serum3.merge$serum.val=="FE",]
+
+# get cor info by each serum val (vs other serum vals)
+cor.2 <- dlply(serum3.merge,
+               c('serum.val.x', "serum.val.y"),
+               get.cor2)
+
+# return a data frame
+cor.2.info = ldply(cor.2)
+cor.2.info
+
+names(cor.2.info) = c("Measure", "correlation")
+cor.2.info
+
+cor.2.info[c(2:3, 6),]
+
+# test = dat.long[dat.long$serum.val=="FE",]
+# dim(test)
+# cor(test$diff.serum, test$diff.nail, method="spearman")
+
+```
+
+
+
+## Plot differences between time 1 and time 2 for serum vs nail measures for fe, fesat and ferritin
+
+```{r}
+
+ggplot(dat.long, aes(diff.nail, diff.serum)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=FALSE) +
+  facet_wrap(.~serum.val, nrow=3)+
+  #geom_abline(slope=slp, intercept=int, color="blue") +
+  labs(x="ln(toenail, time 2) - \nln(toenail, time 1) (mcg/g)", 
+       y="ln(serum , time 2) - \nln(serum, time 1) (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="No case status") +
+  theme_bw() +
+  theme(legend.position = "bottom") 
+
+```
+
+## Plot differences without outlier differences
+
+```{r, results='markup'}
+
+extreme.diff = dat.long[which(dat.long$diff.nail==max(dat.long$diff.nail, na.rm=T) | 
+                                                       dat.long$diff.nail == min(dat.long$diff.nail, na.rm=T)),]$PSID
+#extreme.diff
+  
+kable(unique(dat.long[dat.long$PSID %in% c(extreme.diff), c("PSID", "diff.nail", "diff.serum")]), booktabs=T)
+#levels(factor(dat.long$serum.val))
+dat.long$serum.val.f = factor(dat.long$serum.val,
+                              labels = c("Serum Iron (mcg/dL)", "Ferritin (mcg/dL)", "Transferrin Saturation (%)"))
+
+```
+
+
+
+```{r}
+
+p.diffs = ggplot(dat.long[!(dat.long$PSID %in% extreme.diff),], aes(diff.nail, diff.serum)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=FALSE) +
+  facet_wrap(.~serum.val.f, nrow=3)+
+  #geom_abline(slope=slp, intercept=int, color="blue") +
+  labs(x="ln(toenail, time 2) - \nln(toenail, time 1) ", 
+       y="ln(serum , time 2) - \nln(serum, time 1) (mcg/dL)") +
+  scale_colour_manual(values = c("grey", "black"),
+                      name="Case status") +
+  theme_bw(base_size=20) +
+  theme(legend.position = "bottom") 
+
+p.diffs
+
+```
+
+
+Correlation between these nail/serum differences.
+
+```{r, results="markup"}
+kable(cor.1.info, booktabs=T,
+      caption="Correlation between serum and nail differences from time 1 to time 2")
+```
+
+```{r}
+save(cor.1.info, p.diffs, file="s5-crossed-spearman.RData")
+```
+
+
+## Plot differences between time 1 and time 2 for serum vs serum measures for fe, fesat and ferritin
+
+```{r}
+
+
+p.diffs2 = ggplot(serum3.merge, 
+                  aes(diff.serum2, diff.serum)) + 
+  geom_point() + 
+  stat_smooth(method=lm, color="green", se=FALSE) +
+  facet_grid(serum.val.y~serum.val.x)+
+  theme_bw(base_size=20) +
+  theme(legend.position = "bottom") 
+
+p.diffs2
+
+```
+
+
+
+Correlation between these serum/serum differences.
+
+```{r, results="markup"}
+kable(cor.2.info[c(2:3, 6),], booktabs=T,
+      col.names = c("Serum measure 1", "Serum measure 2", "Spearman Correlation"),
+      caption="Correlation between serum differences from time 1 to time 2")
+```
+
+## Run mixed effects model
+
+Will have random effects for the intercept for each person. Each person had a nail and serum measure in this sample and repeated once over time. In residuals, also will have autocorrelation of time and weighted residuals to account for more variance in nail measure.
+
+- Estimate a mixed effects model of the log transformed serum and nail values as outcomes and time as a covariate to compare change in values across time for both measurement methods.
+
+  - Model: $$y_{ijk} = \beta_{0i} + \beta_{1_i} \cdot x_{1i} + \beta_{2} \cdot x_{2ijk} + \beta_3 \cdot x_{1ijk} \cdot x_{2ijk} + \epsilon_{ijk}$$
+  
+    - $i, j, k$ are the $i$th person, $j$th nail/serum measure and $k$th time (years)
+    - $y_{ijk}$ = log transformed iron measure for person $i$, nail/serum $j$ at time $k$.
+    - $\beta_{0i}$ = random intercept for person $i$
+    - $x_{1i}$ = binary indicator for nail (1=nail, 0=serum) for person $i$.
+    - $\beta_{1_i}$ = random coefficient for nail status
+    - $x_{2ijk}$ = age (years) at measure for person $i$, nail measure $j$, and time $k$.
+    - $\beta_{2}$ = coefficient for age (years)
+    - $\epsilon_{ijk}$ = random error term for person $i$, nail measure $j$, and time $k$; $\epsilon_{ijk} \sim N(0, \Sigma_2)$
+      - $\Sigma_2$ has continuous autocorrelation for the two age measures for each person, $i$, and $k^{th}$ time. 
+    - $\beta_{3}$ = fixed coefficient for product term between nail and age effect.
+
+  - The interpretation of this model would be for a one year increase in time there is a $\beta_{2}$ change in log(value) for serum and a $\beta_{2} + \beta_3$ change for nails. The difference in log transformed iron measures is the same as $log\left(\frac{measure_{time1}}{measure_{time2}})\right)$ and taking the difference of those two indicates the log of the ratio of the ratios. A ratio of ratios of 1 indicates no difference between the two and is also the $H_0$ of $log\left(\frac{\textrm{nail measure}_{time1}}{\textrm{nail measure}_{time2}}\right) - log\left(\frac{\textrm{iron measure}_{time1}}{\textrm{iron measure}_{time2}}\right) = 0$. Rejecting the null hypothesis indicates that the nail and serum measures have different ratios of iron measures over time.
+  
+
+
+```{r}
+
+# Create data set for mixed effects model analysis, with unique rows for each nail/serum and time values by PSID
+
+# alternate analyses with crossed random effects for id and nail
+#test = dat.long[dat.long$serum.val=="FE" & !(dat.long$PSID %in% extreme.diff),]
+test = dat.long[ !(dat.long$PSID %in% extreme.diff),]
+dim(test)
+head(test)
+
+# convert from wide to long for iron measures ==========================
+
+test.long.vals <- 
+  test %>% 
+  dplyr::select(c(PSID, serum.val, no.case.x, premenop.t1.t2, value_t1, nail_t1, 
+                  value_t2, nail_t2)) %>% 
+  pivot_longer(cols = -c("PSID",  'serum.val', 'no.case.x', 'premenop.t1.t2'),
+               values_drop_na=T) 
+head(test.long.vals)
+
+# get first value of a delimited string indicating nail/serum value
+# source: https://stackoverflow.com/questions/49752900/strsplit-and-keep-part-before-first-underscore
+test.long.vals$nail = sapply(str_split(test.long.vals$name, "_",  n = 2), `[`, 1)
+head(test.long.vals$nail)
+
+# get second value of a delimited string indicating time
+# source: https://stackoverflow.com/questions/49752900/strsplit-and-keep-part-before-first-underscore
+test.long.vals$time = sapply(str_split(test.long.vals$name, "_",  n = 2), `[`, 2)
+head(test.long.vals$time)
+
+test.long.time <- 
+  test %>% 
+  dplyr::select(c(PSID, serum.val,  no.case.x, premenop.t1.t2, serum.age, 
+                  scl.serum.age)) %>% 
+  pivot_longer(cols = -c("PSID", 'no.case.x', 'premenop.t1.t2', 'serum.val'),
+               values_drop_na=T) 
+
+head(test.long.time)
+test.long.time$time = ifelse(grepl("scl", test.long.time$name)==T, "t2", "t1")
+head(test.long.time$time)
+
+# merge values and time together
+
+
+long.time = merge(test.long.vals, test.long.time, by=c("PSID", "serum.val", "time"))
+dim(test.long.time)
+dim(test.long.vals)
+dim(long.time)
+head(long.time)
+table(long.time$name.x)
+
+long.time$age=long.time$value.y
+long.time$value = long.time$value.x
+long.time$nail.bin = ifelse(long.time$nail=="nail", 1, 0)
+long.time$time.cont = ifelse(long.time$time=="t2", 2, 1)
+long.time$one1=1L
+long.time$one2=1L
+head(long.time)
+
+long.time$log.value = log(long.time$value)
+levels(factor(long.time$nail))
+long.time$nail.f = factor(long.time$nail, labels=c("Nail", "Serum"))
+
+names(long.time)
+long.time$premenop.t1.t2 = long.time$premenop.t1.t2.x # for some reason I have premenop variable with two diff names following merge.
+```
+
+
+```{r, eval=F, include=F}
+# Look at model with crossed nail and PSID effects
+
+# Source: https://stackoverflow.com/questions/57517018/grouping-variables-in-multilevel-linear-models
+test = long.time[long.time$serum.val=="FE",]
+hist(log(test$value))
+hist(test$value)
+test$log.value = log(test$value)
+
+    summary(df$value)
+    summary(log(df$value))
+    df$log.value = log(df$value)
+
+
+lmer.m1 = lmer(log.value ~ age*nail.bin +  (1|nail.bin) + (1|PSID) , data=test ) 
+summary(lmer.m1)
+coef(lmer.m1)$nail.bin
+table(table(unique(test$PSID))) #  unique PSID
+
+
+```
+
+
+```{r, eval=F, include=F}
+# is there autocorrelation in these data?
+
+df$log.value = log(df$value)
+gdat <- groupedData(value ~  age*nail  | PSID, data = df)
+head(df[c("PSID", "nail", "age", "log.value", "nail.bin")])
+
+check.0 = lme(log.value ~ age*nail, data = df,
+              random = list(~ 1 | PSID))
+ACF(check.0) # https://nwfsc-timeseries.github.io/atsa-labs/sec-tslab-correlation-within-and-among-time-series.html
+plot(ACF(check.0), alpha=0.05)
+
+check.1 = lme(log.value ~ age*nail, data = df,
+              random = list(~ 1 + age | PSID))
+anova(check.0, check.1) # adding a random effect for slope not better fit
+
+# model diagnostics
+
+# box-plots of residuals by Subject
+plot(check.0, PSID ~ resid(.))
+
+head(df$PSID)
+plot(check.0, log.value ~ fitted(.) | PSID, abline = c(0,1), id=~PSID=="00224_100001")
+#normal assumption for error
+qqnorm(check.0,~resid(.)|nail)
+
+# add autocorrelation for age in residuals
+# source: http://bbolker.github.io/mixedmodels-misc/ecostats_chap.html
+check.0_acor <- update(check.0, 
+       correlation=corCAR1(form = ~age|PSID/nail))
+summary(check.0_acor)
+
+anova(check.0, check.0_acor)
+plot(ACF(check.0_acor, resType = "normalized", alpha=0.05))
+```
+
+```{r}
+# run regression for all three outcomes
+
+# function to get regression model
+get.mm = function(df) {
+  tryCatch( 
+    # df = long.time[long.time$serum.val=="FE" ,] # debug
+    lme(log.value ~ nail.bin * age, data = df,
+       random = ~1 + nail.bin | PSID, # random intercept and nail coefficient for each person
+       correlation = corCAR1(form = ~age | PSID/nail.bin)), # continuous autocorrelation for time measure
+      # allow unequal variances for nail/serum groups through a random nail term
+  error = function(e) { # if more complicated model does not work then try reduced parameter model
+    lme(log.value ~ nail.bin * age, data = df,
+        na.action=na.omit,
+        random = ~1 | PSID, # random intercept for each person
+        #correlation = corCAR1(form = ~age | PSID/nail.bin),
+        weights = varIdent(form = ~1|nail.bin)) # weight residuals by nail status
+  })
+}
+```
+
+
+
+
+```{r}
+
+# get models for each of the iron outcomes, fe, fertn, and fesat
+preds2 <- dlply(long.time, c("serum.val"), get.mm)
+
+# x <- x[!sapply(x,is.null)]  # if you want to remove missing elements from list
+sapply(preds2, is.null)
+
+
+list.data.all = lapply(names(preds2), 
+                   function(x) {
+                     dat = coef(summary(preds2[[x]]))
+                     data.frame(dat, 
+                                byval=paste0(x),
+                                coef.name= rownames(dat))}) # extract all coeffcients from the regression models into one data frame and label them
+coef.all = ldply(list.data.all)
+coef.all
+
+```
+
+
+```{r, results="markup"}
+kable(coef.all[c(6,7, 1:5)], 
+      col.names = c("Outcome", "coefficient name",
+                    "value", "se", "df", "t value", "p-value"),
+      booktabs=T,
+      caption="Regression coefficients for mixed effects models by iron outcome and menopause status (status at t1/t2)") %>%
+  collapse_rows(columns=1, valign="top") %>%
+  kable_styling(latex_options = c("HOLD_position"))
+  
+```
+
+
+```{r}
+
+# restructure data so nails are not repeated.
+head(long.time)
+
+long.time$serum.val2 = with(long.time, ifelse(nail=="nail", "nail", serum.val))
+long.time2 = long.time
+#head(long.time)
+
+# separate out nail data
+table(long.time2$nail)
+long.time2.nonail = long.time2[long.time2$nail=="value",]
+long.time2.nail = long.time2[long.time2$nail=="nail",]
+
+# take out duplicate nail rows
+head(long.time2.nail)
+unique.vals = with(long.time2.nail, unique(PSID, age)); head(unique.vals)
+dups = duplicated(long.time2.nail[,c("PSID", "age")])
+head(dups)
+
+long.time2.nail = long.time2.nail[!dups,]
+head(long.time2.nail)
+long.time2.nail$serum.val="nail"
+
+# put both data sets back together
+long.time3 = rbind.data.frame(long.time2.nonail, long.time2.nail)
+```
+
+```{r}
+
+# flip 'no case' variable to case status to make reading legend easier
+long.time3 = within(long.time3, 
+                    {case.x.y = ifelse(no.case.x.y=="Yes", "No",
+                                                ifelse(no.case.x.y == "No", "Yes", NA))
+                    })
+
+#levels(factor(long.time3$serum.val))
+long.time3$serum.val.f = factor(long.time3$serum.val, 
+                                labels=c("Serum Iron",
+                                         "Ferritin",
+                                         "Transferrin Saturation",
+                                         "Nail Iron"))
+p1.s5.crossed = ggplot(data=long.time3,
+           aes(x=age, y=log(value), group=PSID, colour=case.x.y))  +
+  labs(y="ln(value)") +
+  scale_color_manual(values=c("grey", "black"),
+                     name="Case") +
+  theme(legend.position="bottom") +
+  geom_line() + stat_smooth(aes(group = 1), method = "lm", se = FALSE, colour="red") +
+    #stat_summary(aes(group = 1), geom = "point", fun.y = mean, shape = 17, size = 3) +
+    facet_grid(serum.val.f ~., scales="free") +
+  theme_bw(base_size=20) 
+
+p1.s5.crossed
+
+```
+
+
+```{r}
+
+# get models for each of the iron outcomes, fe, fertn, and fesat and by menopause status (pre/pre, pre/post, and post/post)
+long.time$menop.t1.t2 = gsub("/", "-", long.time$premenop.t1.t2.x) 
+table(long.time$menop.t1.t2, useNA = "always")
+
+
+# run the get.mm function over different serum outcomes and menopause subgroups.
+preds2.menop <- dlply(long.time[!(is.na(long.time$menop.t1.t2)),], 
+                      c("serum.val", "menop.t1.t2"), get.mm)
+
+sapply(preds2.menop, function(x) x$call)
+
+sapply(preds2.menop, is.null)
+preds2.menop <- preds2.menop[!sapply(preds2.menop,is.null)]  # if you want to remove missing elements from list
+sapply(preds2.menop, is.null) #check
+
+
+names(preds2.menop)
+summary(preds2.menop[["FE.post-post"]])$tTable
+coef(summary(preds2.menop[[1]]))
+
+list.data.menop = lapply(names(preds2.menop),
+                   function(x) {
+                     dat = coef(summary(preds2.menop[[x]]))
+                     data.frame(dat, 
+                                byval=paste0(x),
+                                coef.name= rownames(dat))}) # extract all coeffcients from the regression models into one data frame and label them
+
+coef.bymenop = ldply(list.data.menop)
+coef.bymenop
+
+# separate out byval variable to get iron indicator and menop status
+# Source: https://stackoverflow.com/questions/4350440/split-data-frame-string-column-into-multiple-columns
+
+
+coef.bymenop$menop.t1.t2 = str_split_fixed(coef.bymenop$byval, "[.]", 2)[,2]
+coef.bymenop$serum.val = str_split_fixed(coef.bymenop$byval, "[.]", 2)[,1]
+coef.bymenop
+
+```
+
+
+```{r, results="markup"}
+kable(coef.bymenop[c(6,7, 1:5)], 
+      booktabs=T,
+      col.names = c("Outcome.menopause status", "coefficient name",
+                    "value", "se", "df", "t value", "p-value"),
+      caption="Regression coefficients for mixed effects models by iron outcome and menopause status (status at t1/t2)") %>%
+  collapse_rows(columns=1, valign="top")
+  
+```
+
+```{r}
+
+#head(long.time[!(is.na(long.time$menop.t1.t2)),])
+
+p2.s5.crossed = ggplot(data = long.time[!(is.na(long.time$menop.t1.t2)),],
+           aes(x=age, y=log(value), group=PSID, colour=no.case.x.y))  +
+  scale_color_manual(values=c("grey", "black"),
+                     name="Not a case") +
+  theme(legend.position="bottom") +
+  geom_line() + stat_smooth(aes(group = 1), method = "lm", se = FALSE, colour="red") +
+    #stat_summary(aes(group = 1), geom = "point", fun.y = mean, shape = 17, size = 3) +
+    facet_grid(serum.val ~ nail.f+menop.t1.t2, scales="free") +
+  labs(y="ln(value)") +
+  theme_bw() 
+
+p2.s5.crossed
+
+```
+
+
+<!-- Re-run with no interaction terms so can put regression lines in plot -->
+
+```{r}
+
+
+# run regression for all three outcomes 
+
+# function to get regression model
+get.mm2 = function(df) {
+  tryCatch( 
+    lme(log.value ~ age, data = df,
+       random = ~1|PSID, # random intercept for each person
+      correlation=corCAR1(form = ~age|PSID)), # continuous autocorrelation for time measure
+  error = function(e) { # if more complicated model does not work then try reduced parameter model
+    lme(log.value ~ age, data = df,
+        na.action=na.omit,
+        random = ~1 | PSID) # only random intercept for each person
+  })
+}
+
+
+
+```
+
+```{r}
+# restructure data so nails are not repeated.
+head(long.time)
+
+long.time$serum.val2 = with(long.time, ifelse(nail=="nail", "nail", serum.val))
+#head(long.time)
+
+long.time2 = long.time[complete.cases(long.time$menop.t1.t2)==T,]
+with(long.time2, table(serum.val2, menop.t1.t2, useNA = "always"))
+
+# separate out nail data
+table(long.time2$nail)
+long.time2.nonail = long.time2[long.time2$nail=="value",]
+long.time2.nail = long.time2[long.time2$nail=="nail",]
+
+# take out duplicate nail rows
+head(long.time2.nail)
+unique.vals = with(long.time2.nail, unique(PSID, age)); head(unique.vals)
+dups = duplicated(long.time2.nail[,c("PSID", "age")])
+head(dups)
+
+long.time2.nail = long.time2.nail[!dups,]
+head(long.time2.nail)
+long.time2.nail$serum.val="nail"
+
+# put both data sets back together
+long.time3 = rbind.data.frame(long.time2.nonail, long.time2.nail)
+head(long.time3[long.time3$PSID %in% c("00224_100001"),]) # check
+
+# flip 'no case' variable to case status to make reading legend easier
+long.time3 = within(long.time3, 
+                    {case.x.y = ifelse(no.case.x.y=="Yes", "No",
+                                                ifelse(no.case.x.y == "No", "Yes", NA))
+                    })
+
+# fertn model for pre-post not working. trouble shoot.
+head(long.time3)
+dim(long.time3)
+test = long.time3[long.time3$menop.t1.t2=="pre-post" & long.time3$serum.val2=="FERTN",]
+head(test)
+dim(test)
+length(unique(test$PSID)) # 31 people
+lme(log.value ~ age, data =test,
+       random = ~1|PSID)#, # random intercept for each person
+      #correlation=corCAR1(form = ~age|PSID))
+
+# get models for each of the iron outcomes, fe, fertn, and fesat and menopause status at t1/t2
+
+preds2. <- dlply(long.time3, c("serum.val2", "menop.t1.t2"), get.mm2)
+
+# get rid of any missing elements from list
+# source: https://stackoverflow.com/questions/33004238/r-removing-null-elements-from-a-list
+preds2 = preds2.[lengths(preds2.) != 0]
+preds2
+
+list.data.all2 = lapply(names(preds2), 
+                   function(x) {
+                     if(is.na(x)==T) {
+                       NA
+                     } else {
+                       dat = coef(summary(preds2[[x]]))
+                       data.frame(dat, 
+                                byval=paste0(x),
+                                coef.name= rownames(dat))}
+                     }) # extract all coeffcients from the regression models into one data frame and label them
+
+coef.all2 = ldply(list.data.all2)
+coef.all2
+
+
+# separate out byval variable to get iron indicator and menop status
+# Source: https://stackoverflow.com/questions/4350440/split-data-frame-string-column-into-multiple-columns
+
+coef.all2$menop.t1.t2 = str_split_fixed(coef.all2$byval, "[.]", 2)[,2]
+coef.all2$serum.val = str_split_fixed(coef.all2$byval, "[.]", 2)[,1]
+coef.all2
+
+# make one col for intercept and one col for slope
+head(coef.all2)
+names(coef.all2)
+
+coef.all3 = coef.all2[,c('serum.val', 'menop.t1.t2', 'Value', 'Std.Error', 'coef.name')] %>%
+  pivot_wider(names_from=c(coef.name), values_from=c(Value, Std.Error))
+coef.all3
+
+names(coef.all3) = c("serum.val2", "menop.t1.t2", "Intercept", "age", "int.se", "age.se")
+coef.all3
+
+
+```
+
+
+```{r}
+# get models for each of the iron outcomes, fe, fertn, and fesat 
+preds3 <- dlply(long.time3, c("serum.val2"), get.mm2)
+
+list.data.all3 = lapply(names(preds3), 
+                   function(x) {
+                     if(is.na(x)==T) {
+                       NA
+                     } else {
+                       dat = coef(summary(preds3[[x]]))
+                       data.frame(dat, 
+                                byval=paste0(x),
+                                coef.name= rownames(dat))}
+                     }) # extract all coeffcients from the regression models into one data frame and label them
+
+coef.all3a = ldply(list.data.all3)
+coef.all3a
+
+kable(coef.all3a[c(6, 7, 1:5)], 
+      booktabs=T,
+      col.names = c("Iron status", "Coefficient type",
+                    "value", "se", "df", "t value", "p-value"),
+      digits=2,
+      caption="Regression coefficients for mixed effects models by iron outcome") %>%
+  collapse_rows(columns=1, valign="top")
+  
+
+```
+
+```{r, results="markup"}
+
+kable(coef.all2[c(9, 8, 7, 1:5)], 
+      booktabs=T,
+      col.names = c("Iron status", "menopause status", "Coefficient type",
+                    "value", "se", "df", "t value", "p-value"),
+      digits=2,
+      caption="Regression coefficients for mixed effects models by iron outcome and menopause status") %>%
+  collapse_rows(columns=1:2, valign="top")
+  
+```
+
+```{r}
+
+# restructure nail data so nail values will be on right side of panel
+# and add fitted intercepts and slopes
+#head(long.time3)
+#coef.all3
+
+levels(factor(long.time3$menop.t1.t2))
+# change ordering of menopause status
+long.time3$menop.t1.t2 = factor(long.time3$menop.t1.t2, levels = c("pre-pre",
+                                                                   "pre-post",
+                                                                   "post-post"))
+coef.all3$menop.t1.t2 = factor(coef.all3$menop.t1.t2, levels = c("pre-pre",
+                                                                   "pre-post",
+                                                                   "post-post"))
+
+# rename iron labels for figure (and change order)
+long.time3$serum.val3 = with(long.time3, ifelse(serum.val2=="FE", "Serum Iron", 
+                                                ifelse(serum.val2=="FERTN", "Ferritin",
+                                                       ifelse(serum.val2=="FESAT", "Transferrin\n Saturation",
+                                                              ifelse(serum.val2=="nail", "Nail Iron", NA)))))
+long.time3$serum.val3 = factor(long.time3$serum.val3, levels=c("Serum Iron", "Ferritin", "Transferrin\n Saturation", "Nail Iron"))
+
+
+coef.all3$serum.val3 = with(coef.all3, ifelse(serum.val2=="FE", "Serum Iron", 
+                                                ifelse(serum.val2=="FERTN", "Ferritin",
+                                                       ifelse(serum.val2=="FESAT", "Transferrin\n Saturation",
+                                                              ifelse(serum.val2=="nail", "Nail Iron", NA)))))
+levels(factor(coef.all3$serum.val3))
+coef.all3$serum.val3 = factor(coef.all3$serum.val3, levels=c("Serum Iron", "Ferritin", "Transferrin\n Saturation", "Nail Iron"))
+
+coef.all3
+coef.all3$text = with(coef.all3, paste0(formatC(round(age,3), format='f', digits=3), " (",
+                                        formatC(round((age-age.se*1.96),3), format='f', digits=3), ", ",
+                                        formatC(round((age+age.se*1.96),3), format='f', digits=3),
+                                        ")"))
+coef.all3  
+coef.all3$PSID="00224_100001"
+coef.all3$no.case.x.y = "No"
+coef.all3
+head(long.time3)
+```
+
+
+```{r}
+
+# Make plot =================================================
+
+head(long.time3)
+
+p2.s5.crossed2 = ggplot(data = long.time3,
+           aes(x=age, y=log(value), 
+               group=PSID#, colour=case.x.y
+               ))  +
+#  scale_color_manual(values=c("black", "grey"),
+#                     name="Case") +
+  labs(x="Age (years)", y="ln(value)") +
+  geom_line()+
+  theme(legend.position="bottom") +
+  facet_grid(serum.val3 ~ menop.t1.t2, scales="free") +
+  geom_abline(data=coef.all3, aes(intercept=Intercept, slope=age), colour="red", lwd=1.5) +
+  #geom_text(data=coef.all3, aes(label=text, 
+  #                              x = c(44, 40, rep(c(44.5,44,40),3)),
+  #                              y = c( 1.9, 2.4, 1.3, rep(3.7,2), rep(1.9,2), rep(2.4,2), rep(1.3,2))), color="blue", size=6) + # omit annotation on plot. Too difficult to place
+  theme_bw(base_size=28) 
+
+p2.s5.crossed2
+
+
+```
+
+```{r}
+
+ggsave("linear.png", units="in", width=15, height=9, dpi=400) #units="in", width=5, height=4, dpi=300,
+
+```
+
+```{r}
+
+
+#table(long.time3$serum.val3)
+long.time3.sub = long.time3[which(long.time3$serum.val3 %in% c("Ferritin", "Nail Iron")),]
+long.time3.sub$serum.val3 = factor(long.time3.sub$serum.val3,
+                                   labels = c("Ferritin, mcg/dL", "Nail Iron, mcg/g"))
+levels(long.time3.sub$menop.t1.t2)
+long.time3.sub$menop.t1.t2 = factor(long.time3.sub$menop.t1.t2, 
+                                    labels = c("t1=Premenopause\nt2=Premenopause",
+                                               "t1=Premenopause\nt2=Postmenopause",
+                                               "t1=Postmenopause\nt2=Postmenopause"))
+  
+coef.all3.sub = coef.all3[which(coef.all3$serum.val3 %in%  c("Ferritin", "Nail Iron")),]
+coef.all3.sub$serum.val3 = factor(coef.all3.sub$serum.val3,
+                                   labels = c("Ferritin, mcg/dL", "Nail Iron, mcg/g"))
+levels(coef.all3.sub$serum.val3)
+coef.all3.sub$menop.t1.t2 = factor(coef.all3.sub$menop.t1.t2, 
+                                    labels = c("t1=Premenopause\nt2=Premenopause",
+                                               "t1=Premenopause\nt2=Postmenopause",
+                                               "t1=Postmenopause\nt2=Postmenopause"))
+
+
+cross_1 = ggplot(data = long.time3.sub,
+                 aes(x=age, y=log(value),
+                     group=PSID))  +
+  labs(x="Age (years)", y="ln(value)") +
+  geom_line()+
+  geom_point()+
+  theme(legend.position="bottom") +
+  facet_grid(serum.val3 ~ menop.t1.t2, scales="free", switch="y") +
+  geom_abline(data=coef.all3.sub, aes(intercept=Intercept, slope=age), colour="red", lwd=1.5) +
+  #geom_text(data=coef.all3, aes(label=text, 
+  #                              x = c(44, 40, rep(c(44.5,44,40),3)),
+  #                              y = c( 1.9, 2.4, 1.3, rep(3.7,2), rep(1.9,2), rep(2.4,2), rep(1.3,2))), color="blue", size=6) + # omit annotation on plot. Too difficult to place
+  theme_bw(base_size=40) +
+    theme(
+        axis.line = element_line(colour = "black", size = 1/.pt),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.background = element_blank(),
+        strip.background = element_rect(colour=NA, fill=NA),
+        strip.placement="outside", 
+        legend.position="bottom")
+
+cross_1
+```
+
+```{r}
+ggsave(cross_1, 
+       file="~\\Github\\postdoc\\misc\\presentations\\job-talk-2022\\images\\compare-long.png", 
+       dpi=600, width=15, height=12)
+
+
+```
+
+```{r}
+
+# by case status
+
+# get models for each of the iron outcomes, fe, fertn, and fesat and by case status
+
+preds2.case <- dlply(long.time[!(is.na(long.time$menop.t1.t2)),], 
+                      c("serum.val", "no.case.x.x"), get.mm)
+names(preds2.case)
+summary(preds2.case[["FE.No"]])$tTable
+
+# extract out coefficients from object
+
+list.data.case = lapply(names(preds2.case),
+                   function(x) {
+                     dat = coef(summary(preds2.case[[x]]))
+                     data.frame(dat, 
+                                byval=paste0(x),
+                                coef.name= rownames(dat))}) # extract all coeffcients from the regression models into one data frame and label them
+
+coef.bycase = ldply(list.data.case)
+coef.bycase
+
+```
+
+
+```{r, results="markup"}
+kable(coef.bycase[c(6,7, 1:5)], 
+      booktabs=T,
+      col.names = c("Outcome.case status", "coefficient name",
+                    "value", "se", "df", "t value", "p-value"),
+      caption="Regression coefficients for mixed effects models by iron outcome and case status") %>%
+  collapse_rows(columns=1, valign="top")
+  
+```
+
+
+```{r}
+# save data for bookdown repot (in index.Rmd)
+
+save(coef.all, coef.all2, coef.all3a,
+     coef.bycase, coef.bymenop, p1.s5.crossed, p2.s5.crossed, p2.s5.crossed2, file="s5-crossed.RData")
+
+```
+
+
+
+
